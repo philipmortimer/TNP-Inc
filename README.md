@@ -2,20 +2,20 @@
 A framework for implementing transformer neural processes (TNPs) in Python.
 
 ## Setting up the conda environment.
-```
+```bash
 conda env create -f environment.yml
 conda activate tnpp
 pip install -e .
 ```
 
 ## Running experiments.
-```
+```bash
 python experiments/lightning_train.py --config experiments/configs/models/tnp.yml --generator_config experiments/configs/generators/synthetic-1d.yml
 ```
 
 ## Constructing models.
 How to construct a TNP from scratch:
-```
+```python
 import tnp
 
 # First define the parameters.
@@ -44,7 +44,7 @@ xy_encoder = tnp.networks.mlp.MLP(
     width=embed_dim,
 )
 tnp_encoder = tnp.models.tnp.TNPEncoder(
-    transformer_encoder = transformer_encoder,
+    transformer_encoder=transformer_encoder,
     xy_encoder=xy_encoder,
 )
 
@@ -72,7 +72,7 @@ tnp = tnp.models.tnp.TNP(
 
 ## Loading data.
 Data is loaded in batches, which follow the construction of `tnp.data.base.Batch`:
-```
+```python
 class Batch:
     # All observations of shape (m, n, d).
     x: torch.Tensor
