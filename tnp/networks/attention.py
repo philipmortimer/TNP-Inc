@@ -1,5 +1,3 @@
-"""https://github.com/rishikksh20/CrossViT-pytorch/blob/master/module.py"""
-
 from abc import ABC
 from typing import Optional
 
