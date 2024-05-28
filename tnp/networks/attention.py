@@ -3,6 +3,7 @@
 from abc import ABC
 from typing import Optional
 
+import einops
 import torch
 from check_shapes import check_shapes
 from torch import nn
@@ -16,6 +17,7 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         num_heads: int,
         head_dim: int,
         p_dropout: float = 0.0,
+        linear: bool = False,
     ):
         super().__init__()
 
@@ -36,6 +38,8 @@ class BaseMultiHeadAttention(nn.Module, ABC):
             else nn.Identity()
         )
 
+        self.linear = linear
+
     @check_shapes(
         "xq: [m, nq, dqk]",
         "xk: [m, nkv, dqk]",
@@ -54,12 +58,19 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         k = self.to_k(xk)
         v = self.to_v(xv)
 
-        out = (
-            nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
-                q, k, v, attn_mask=mask, scale=self.scale
-            )
+        q, k, v = map(
+            lambda x: einops.rearrange(x, "m n (h d) -> m h n d", h=self.num_heads),
+            (q, k, v),
         )
 
+        if self.linear:
+            out = linear_attention(q, k, v, attn_mask=mask, scale=self.scale)
+        else:
+            out = nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
+                q, k, v, attn_mask=mask, scale=self.scale
+            )
+
+        out = einops.rearrange(out, "m h n d -> m n (h d)")
         out = self.to_out(out)
         return out
 
@@ -119,3 +130,28 @@ class MultiHeadCrossAttention(BaseMultiHeadAttention):
         self, xq: torch.Tensor, xkv: torch.Tensor, mask: Optional[torch.Tensor] = None
     ):
         return super().propagate(xq, xkv, xkv, mask)
+
+
+@check_shapes(
+    "q: [m, h, nq, dqk]",
+    "k: [m, h, nkv, dqk]",
+    "v: [m, h, nkv, dq]",
+)
+def linear_attention(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    attn_mask: Optional[torch.Tensor],
+    scale: float = 1.0,
+):
+    if attn_mask is not None:
+        # TODO: What is going on here.
+        raise NotImplementedError("Not implemented yet.")
+
+    q = q.softmax(dim=-1)
+    k = k.softmax(dim=-1)
+    q = q * scale
+
+    kv = k.transpose(-1, -2) @ v
+    out = q @ kv
+    return out
