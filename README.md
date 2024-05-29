@@ -87,3 +87,9 @@ class Batch:
     yt: torch.Tensor
 ```
 See `tnp.data` for more examples.
+
+## Contributing.
+```
+pre-commit install
+```
+**rock and roll**
