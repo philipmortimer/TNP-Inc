@@ -61,6 +61,9 @@ class BaseMultiHeadAttention(nn.Module, ABC):
             (q, k, v),
         )
 
+        if mask is not None:
+            mask = einops.repeat(mask, "m n1 n2 -> m h n1 n2", h=self.num_heads)
+
         if self.linear:
             out = linear_attention(q, k, v, attn_mask=mask, scale=self.scale)
         else:
