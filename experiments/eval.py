@@ -1,6 +1,5 @@
 import lightning.pytorch as pl
 import torch
-from plot import plot
 
 import wandb
 from tnp.utils.experiment_utils import initialize_evaluation, val_epoch
@@ -15,23 +14,6 @@ def main():
     gen_test = experiment.generators.test
 
     model.eval()
-
-    if experiment.misc.only_plots:
-        gen_test.batch_size = 1
-        gen_test.num_batches = experiment.misc.num_plots
-        _, batches = val_epoch(model=model, generator=gen_test)
-
-        eval_name = wandb.run.name + "/" + eval_name
-        plot(
-            model=model,
-            batches=batches,
-            num_fig=min(experiment.misc.num_plots, len(batches)),
-            name=eval_name,
-            savefig=experiment.misc.savefig,
-            logging=experiment.misc.logging,
-        )
-
-        return
 
     # Store number of parameters.
     num_params = sum(p.numel() for p in model.parameters())
@@ -53,10 +35,8 @@ def main():
             test_result["mean_gt_loglik"] = gt_loglik.mean()
             test_result["std_gt_loglik"] = gt_loglik.std() / (len(gt_loglik) ** 0.5)
 
-        batches = test_result["batch"]
-
     else:
-        test_result, batches = val_epoch(model=model, generator=gen_test)
+        test_result, _ = val_epoch(model=model, generator=gen_test)
 
     if experiment.misc.logging:
         wandb.run.summary["num_params"] = num_params
@@ -69,14 +49,6 @@ def main():
             wandb.run.summary[f"test/{eval_name}/std_gt_loglik"] = test_result[
                 "std_gt_loglik"
             ]
-    plot(
-        model=model,
-        batches=batches,
-        num_fig=min(experiment.misc.num_plots, len(batches)),
-        name=eval_name,
-        savefig=experiment.misc.savefig,
-        logging=experiment.misc.logging,
-    )
 
 
 if __name__ == "__main__":
