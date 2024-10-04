@@ -37,15 +37,12 @@ class SyntheticGenerator(DataGenerator, ABC):
         self.min_nt = torch.as_tensor(min_nt, dtype=torch.int)
         self.max_nt = torch.as_tensor(max_nt, dtype=torch.int)
 
-    def generate_batch(self, batch_shape: Optional[torch.Size] = None) -> Batch:
+    def generate_batch(self) -> Batch:
         """Generate batch of data.
 
         Returns:
             batch: Tuple of tensors containing the context and target data.
         """
-
-        if batch_shape is None:
-            batch_shape = torch.Size((self.batch_size,))
 
         # Sample number of context and target points.
         nc = torch.randint(low=self.min_nc, high=self.max_nc + 1, size=())
@@ -55,7 +52,7 @@ class SyntheticGenerator(DataGenerator, ABC):
         batch = self.sample_batch(
             nc=nc,
             nt=nt,
-            batch_shape=batch_shape,
+            batch_shape=torch.Size((self.batch_size,)),
         )
 
         return batch
@@ -259,10 +256,7 @@ class SyntheticGeneratorMixture(SyntheticGenerator):
         for generator in self.generators:
             generator.num_batches = np.inf
 
-    def generate_batch(self, batch_shape: Optional[torch.Size] = None) -> Batch:
-        if batch_shape is None:
-            batch_shape = torch.Size((self.batch_size,))
-
+    def generate_batch(self) -> Batch:
         # Sample generator.
         gen = random.choices(self.generators, weights=self.mixture_probs, k=1)[0]
 
@@ -270,7 +264,9 @@ class SyntheticGeneratorMixture(SyntheticGenerator):
         nc = torch.randint(low=self.min_nc, high=self.max_nc + 1, size=())
         nt = torch.randint(low=self.min_nt, high=self.max_nt + 1, size=())
 
-        return gen.sample_batch(nc=nc, nt=nt, batch_shape=batch_shape)
+        return gen.sample_batch(
+            nc=nc, nt=nt, batch_shape=torch.Size((self.batch_size,))
+        )
 
     def sample_inputs(
         self,

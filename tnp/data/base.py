@@ -1,8 +1,36 @@
+import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Optional
 
+import numpy as np
+import pytorch_lightning as pl
 import torch
+
+
+@dataclass
+class BaseBatch(ABC):
+    pass
+
+
+@dataclass
+class ImageBatch(BaseBatch):
+    y_grid: torch.Tensor
+    mc_grid: torch.Tensor
+    mt_grid: torch.Tensor
+    yt: torch.Tensor
+
+
+@dataclass
+class Batch(BaseBatch):
+    x: torch.Tensor
+    y: torch.Tensor
+
+    xt: torch.Tensor
+    yt: torch.Tensor
+
+    xc: torch.Tensor
+    yc: torch.Tensor
 
 
 class GroundTruthPredictor(ABC):
@@ -25,19 +53,7 @@ class GroundTruthPredictor(ABC):
         raise NotImplementedError
 
 
-@dataclass
-class Batch:
-    x: torch.Tensor
-    y: torch.Tensor
-
-    xc: torch.Tensor
-    yc: torch.Tensor
-
-    xt: torch.Tensor
-    yt: torch.Tensor
-
-
-class DataGenerator(ABC):
+class DataGenerator(torch.utils.data.IterableDataset, ABC):
     def __init__(
         self,
         *,
@@ -45,6 +61,7 @@ class DataGenerator(ABC):
         batch_size: int,
         deterministic: bool = False,
         deterministic_seed: int = 0,
+        **kwargs,
     ):
         """Base data generator, which can be used to derive other data generators,
         such as synthetic generators or real data generators.
@@ -53,6 +70,7 @@ class DataGenerator(ABC):
             samples_per_epoch: Number of samples per epoch.
             batch_size: Batch size.
         """
+        super().__init__(**kwargs)
 
         self.samples_per_epoch = samples_per_epoch
         self.batch_size = batch_size
@@ -60,27 +78,27 @@ class DataGenerator(ABC):
 
         # Set batch counter.
         self.batch_counter = 0
-
         self.deterministic = deterministic
         self.deterministic_seed = deterministic_seed
         self.batches = None
-
-    def __len__(self):
-        return self.num_batches
 
     def __iter__(self):
         """Reset batch counter and return self."""
         if self.deterministic and self.batches is None:
             # Set deterministic seed.
-            current_seed = torch.seed()
-            torch.manual_seed(self.deterministic_seed)
+            torch_seed = torch.seed()
+            np_seed = np.random.seed()
+            random_state = random.getstate()
+            pl.seed_everything(self.deterministic_seed)
             self.batches = [self.generate_batch() for _ in range(self.num_batches)]
-            torch.manual_seed(current_seed)
+            torch.manual_seed(torch_seed)
+            np.random.seed(np_seed)
+            random.setstate(random_state)
 
         self.batch_counter = 0
         return self
 
-    def __next__(self) -> Batch:
+    def __next__(self) -> BaseBatch:
         """Generate next batch of data, using the `generate_batch` method.
         The `generate_batch` method should be implemented by the derived class.
         """
@@ -97,7 +115,7 @@ class DataGenerator(ABC):
         return batch
 
     @abstractmethod
-    def generate_batch(self, batch_shape: Optional[torch.Size] = None) -> Batch:
+    def generate_batch(self) -> BaseBatch:
         """Generate batch of data.
 
         Returns:

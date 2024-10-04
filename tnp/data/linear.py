@@ -67,5 +67,7 @@ class LinearGroundTruthPredictor(GPGroundTruthPredictor):
     def __init__(self, prior_std: float, noise_std: float):
         kernel = gpytorch.kernels.LinearKernel()
         kernel.variance = prior_std**2
+        likelihood = gpytorch.likelihoods.GaussianLikelihood()
+        likelihood.noise = noise_std**2
 
-        super().__init__(kernel, noise_std)
+        super().__init__(kernel, likelihood)

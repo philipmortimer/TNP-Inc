@@ -13,7 +13,7 @@ from tqdm.auto import tqdm
 
 import wandb
 
-from ..data.base import Batch, DataGenerator
+from ..data.base import Batch, DataGenerator, ImageBatch
 from ..data.synthetic import SyntheticBatch
 from ..models.base import ConditionalNeuralProcess, NeuralProcess
 from ..models.convcnp import GriddedConvCNP
@@ -93,6 +93,7 @@ def np_pred_fn(
     num_samples: int = 1,
 ) -> torch.distributions.Distribution:
     if isinstance(model, GriddedConvCNP):
+        assert isinstance(batch, ImageBatch)
         pred_dist = model(mc=batch.mc_grid, y=batch.y_grid, mt=batch.mt_grid)
     elif isinstance(model, ConditionalNeuralProcess):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt)
