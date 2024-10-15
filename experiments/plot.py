@@ -10,7 +10,7 @@ from torch import nn
 import wandb
 from tnp.data.base import Batch
 from tnp.data.synthetic import SyntheticBatch
-from tnp.utils.experiment_utils import np_pred_fn
+from tnp.utils.np_functions import np_pred_fn
 
 matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
