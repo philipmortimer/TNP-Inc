@@ -143,7 +143,7 @@ class BaseISTEncoder(nn.Module, ABC):
         self.latents = nn.Parameter(torch.randn(num_latents, embed_dim))
 
         self.mhca_ctoq_layers = _get_clones(mhca_ctoq_layer, num_layers)
-        self.mhca_qtoc_layers = _get_clones(mhca_qtoc_layer, num_layers)
+        self.mhca_qtoc_layers = _get_clones(mhca_qtoc_layer, num_layers - 1)
         self.mhca_qtot_layers = _get_clones(mhca_qtot_layer, num_layers)
 
 
@@ -158,12 +158,14 @@ class ISTEncoder(BaseISTEncoder):
             warnings.warn("mask is not currently being used.")
 
         xq = einops.repeat(self.latents, "l e -> m l e", m=xc.shape[0])
-        for mhca_ctoq_layer, mhca_qtoc_layer, mhca_qtot_layer in zip(
-            self.mhca_ctoq_layers, self.mhca_qtoc_layers, self.mhca_qtot_layers
+        for i, (mhca_ctoq_layer, mhca_qtot_layer) in enumerate(
+            zip(self.mhca_ctoq_layers, self.mhca_qtot_layers)
         ):
             xq = mhca_ctoq_layer(xq, xc)
-            xc = mhca_qtoc_layer(xc, xq)
             xt = mhca_qtot_layer(xt, xq)
+
+            if i < len(self.mhca_qtoc_layers):
+                xc = self.mhca_qtoc_layers[i](xc, xq)
 
         return xt
 
