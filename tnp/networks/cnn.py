@@ -35,14 +35,19 @@ class ConvBlock(nn.Module):
         in_channels: int,
         out_channels: int,
         Conv: nn.Module,
-        kernel_size: int = 5,
+        kernel_size: Union[int, Tuple[int, ...]] = 5,
         activation: nn.Module = nn.ReLU(),
         **kwargs,
     ):
         super().__init__()
 
         self.activation = activation
-        padding = kernel_size // 2
+
+        if isinstance(kernel_size, int):
+            padding = kernel_size // 2
+        else:
+            kernel_size = tuple(kernel_size)
+            padding = [k // 2 for k in kernel_size]
 
         # Conv = make_depth_sep_conv(Conv)
         self.conv = Conv(
@@ -60,7 +65,7 @@ class ResConvBlock(nn.Module):
         in_channels: int,
         out_channels: int,
         Conv: nn.Module,
-        kernel_size: int = 5,
+        kernel_size: Union[int, Tuple[int, ...]] = 5,
         activation: nn.Module = nn.ReLU(),
         bias: bool = True,
         num_conv_layers: int = 1,
@@ -71,10 +76,18 @@ class ResConvBlock(nn.Module):
         self.num_conv_layers = num_conv_layers
         assert num_conv_layers in [1, 2]
 
-        if kernel_size % 2 == 0:
-            raise ValueError(f"kernel_size={kernel_size}, but should be odd.")
+        if isinstance(kernel_size, int):
+            if kernel_size % 2 == 0:
+                raise ValueError(f"kernel_size={kernel_size}, but should be odd.")
 
-        padding = kernel_size // 2
+            padding = kernel_size // 2
+        else:
+            kernel_size = tuple(kernel_size)
+            for k in kernel_size:
+                if k % 2 == 0:
+                    raise ValueError(f"kernel_size={k}, but should be odd.")
+
+            padding = [k // 2 for k in kernel_size]
 
         if num_conv_layers == 2:
             # self.conv1 = make_depth_sep_conv(Conv)(
@@ -189,13 +202,16 @@ class UNet(CNN):
         num_channels: Union[int, List[int]],
         num_blocks: Optional[int] = None,
         max_num_channels: int = 256,
-        pooling_size: int = 2,
+        pooling_size: Union[int, Tuple[int, ...]] = 2,
         factor_chan: int = 2,
         **kwargs,
     ):
         self.max_num_channels = max_num_channels
         self.factor_chan = factor_chan
         super().__init__(dim, num_channels, num_blocks, **kwargs)
+
+        if not isinstance(pooling_size, int):
+            pooling_size = tuple(pooling_size)
 
         self.pooling_size = pooling_size
         self.pooling = POOL[dim](pooling_size)
