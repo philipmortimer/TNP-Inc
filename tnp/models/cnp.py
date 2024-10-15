@@ -13,10 +13,12 @@ class CNPEncoder(nn.Module):
         self,
         deepset: DeepSet,
         x_encoder: nn.Module = nn.Identity(),
+        y_encoder: nn.Module = nn.Identity(),
     ):
         super().__init__()
         self.deepset = deepset
         self.x_encoder = x_encoder
+        self.y_encoder = y_encoder
 
     @check_shapes(
         "xc: [m, nc, dx]",
@@ -31,7 +33,9 @@ class CNPEncoder(nn.Module):
         x_encoded = self.x_encoder(x)
         xc_encoded, xt_encoded = x_encoded.split((xc.shape[1], xt.shape[1]), dim=1)
 
-        zc = self.deepset(xc_encoded, yc)
+        yc_encoded = self.y_encoder(yc)
+
+        zc = self.deepset(xc_encoded, yc_encoded)
 
         # Use same context representation for every target point.
         zc = einops.repeat(zc, "m d -> m n d", n=xt.shape[-2])
