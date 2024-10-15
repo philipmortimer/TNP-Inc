@@ -1,6 +1,6 @@
 import random
 from abc import ABC
-from typing import Dict, List, Optional, Tuple, Type, Union
+from typing import Dict, Iterable, Optional, Tuple, Type, Union
 
 import einops
 import gpytorch
@@ -125,7 +125,7 @@ class GPGroundTruthPredictor(GroundTruthPredictor):
         return mean, std, gt_loglik
 
     def sample_outputs(
-        self, x: torch.Tensor, sample_shape: Optional[torch.Size] = None
+        self, x: torch.Tensor, sample_shape: torch.Size = torch.Size()
     ) -> torch.Tensor:
 
         gp_model = GPRegressionModel(
@@ -149,7 +149,8 @@ class GPGenerator(ABC):
         self,
         *,
         kernel: Union[
-            List[Type[gpytorch.kernels.Kernel]], Type[gpytorch.kernels.Kernel]
+            Type[gpytorch.kernels.Kernel],
+            Tuple[Type[gpytorch.kernels.Kernel], ...],
         ],
         min_log10_lengthscale: float,
         max_log10_lengthscale: float,
@@ -160,6 +161,9 @@ class GPGenerator(ABC):
         super().__init__(**kwargs)
 
         self.kernel = kernel
+        if isinstance(self.kernel, Iterable):
+            self.kernel = tuple(self.kernel)
+
         self.min_log10_lengthscale = torch.as_tensor(
             min_log10_lengthscale, dtype=torch.float
         )
@@ -186,7 +190,7 @@ class GPGenerator(ABC):
 
         lengthscale = 10.0**log10_lengthscale
 
-        if isinstance(self.kernel, list):
+        if isinstance(self.kernel, tuple):
             kernel = random.choice(self.kernel)
         else:
             kernel = self.kernel
