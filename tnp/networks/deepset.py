@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Optional
 
 import torch
 from check_shapes import check_shapes
@@ -20,17 +20,11 @@ class DeepSet(nn.Module):
     def __init__(
         self,
         z_encoder: nn.Module,
-        x_encoder: nn.Module = nn.Identity(),
-        y_encoder: nn.Module = nn.Identity(),
-        xy_comb: Callable = lambda x, y: torch.cat((x, y), dim=-1),
         agg: str = "sum",
     ):
         super().__init__()
 
         self.z_encoder = z_encoder
-        self.x_encoder = x_encoder
-        self.y_encoder = y_encoder
-        self.xy_comb = xy_comb
 
         if agg == "sum":
             self.agg = lambda x: torch.nansum(x, dim=-2)
@@ -48,9 +42,7 @@ class DeepSet(nn.Module):
     def forward(
         self, x: torch.Tensor, y: torch.Tensor, mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        x_enc = self.x_encoder(x)
-        y_enc = self.y_encoder(y)
-        z = self.xy_comb(x_enc, y_enc)
+        z = torch.cat((x, y), dim=-1)
         z = self.z_encoder(z)
         if mask is not None:
             z[mask] = torch.nan
