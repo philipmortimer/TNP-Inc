@@ -1,11 +1,11 @@
 model:
-  _target_: tnp.models.pttnp.PTTNP
-  encoder: ${pttnp_encoder}
+  _target_: tnp.models.tnp.TNP
+  encoder: ${tnp_encoder}
   decoder: ${tnp_decoder}
   likelihood: ${likelihood}
 
-pttnp_encoder:
-  _target_: tnp.models.pttnp.PTTNPEncoder
+tnp_encoder:
+  _target_: tnp.models.tnp.TNPEncoder
   transformer_encoder: ${ist_encoder}
   xy_encoder: ${xy_encoder}
 

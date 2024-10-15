@@ -11,8 +11,17 @@ tnp_encoder:
 
 transformer_encoder:
   _target_: tnp.networks.transformer.TNPTransformerEncoder
+  mhsa_layer: ${mhsa_layer}
   mhca_layer: ${mhca_layer}
   num_layers: ${params.num_layers}
+
+mhsa_layer:
+  _target_: tnp.networks.attention_layers.MultiHeadSelfAttentionLayer
+  embed_dim: ${params.embed_dim}
+  num_heads: ${params.num_heads}
+  head_dim: ${params.head_dim}
+  feedforward_dim: ${params.embed_dim}
+  norm_first: ${params.norm_first}
 
 mhca_layer:
   _target_: tnp.networks.attention_layers.MultiHeadCrossAttentionLayer
@@ -62,4 +71,3 @@ misc:
   resume_from_checkpoint: null
   gradient_clip_val: 0.5
   plot_interval: 10
-  logging: False
