@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Optional, Union
 
 import torch
 from check_shapes import check_shapes
@@ -19,8 +19,13 @@ class TNPDecoder(nn.Module):
         self.z_decoder = z_decoder
 
     @check_shapes("z: [m, ..., n, dz]", "xt: [m, nt, dx]", "return: [m, ..., nt, dy]")
-    def forward(self, z: torch.Tensor, xt: torch.Tensor) -> torch.Tensor:
-        zt = z[..., -xt.shape[-2] :, :]
+    def forward(
+        self, z: torch.Tensor, xt: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        if xt is not None:
+            zt = z[..., -xt.shape[-2] :, :]
+        else:
+            zt = z
         return self.z_decoder(zt)
 
 

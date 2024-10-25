@@ -61,8 +61,8 @@ class GriddedConvCNPEncoder(nn.Module):
 
     @check_shapes(
         "mc: [m, ...]",
-        "mt: [m, ...]",
         "y: [m, ..., dy]",
+        "mt: [m, ...]",
         "return: [m, dt, dz]",
     )
     def forward(
