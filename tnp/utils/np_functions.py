@@ -2,7 +2,11 @@ import torch
 from torch import nn
 
 from ..data.base import Batch, ImageBatch
-from ..models.base import ConditionalNeuralProcess, NeuralProcess
+from ..models.base import (
+    ARConditionalNeuralProcess,
+    ConditionalNeuralProcess,
+    LatentNeuralProcess,
+)
 from ..models.convcnp import GriddedConvCNP
 
 
@@ -16,10 +20,12 @@ def np_pred_fn(
         pred_dist = model(mc=batch.mc_grid, y=batch.y_grid, mt=batch.mt_grid)
     elif isinstance(model, ConditionalNeuralProcess):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt)
-    elif isinstance(model, NeuralProcess):
+    elif isinstance(model, LatentNeuralProcess):
         pred_dist = model(
             xc=batch.xc, yc=batch.yc, xt=batch.xt, num_samples=num_samples
         )
+    elif isinstance(model, ARConditionalNeuralProcess):
+        pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
     else:
         raise ValueError
 
