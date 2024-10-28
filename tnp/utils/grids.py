@@ -9,8 +9,10 @@ from check_shapes import check_shapes
 
 def flatten_grid(
     x: torch.Tensor,
+    start_dim: int = 1,
+    end_dim: int = -1,
 ) -> Tuple[torch.Tensor, Callable[[torch.Tensor], torch.Tensor]]:
-    grid_shape = x.shape[1:-1]
+    grid_shape = x.shape[start_dim:end_dim]
     n_strings = [f"n{i}" for i in range(len(grid_shape))]
     grid_pattern = f"b {' '.join(n_strings)} e"
     flat_pattern = f"b ({' '.join(n_strings)}) e"

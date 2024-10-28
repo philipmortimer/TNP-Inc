@@ -93,11 +93,13 @@ class GPGroundTruthPredictor(GroundTruthPredictor):
                     gt_loglik = pred_dist.to_data_independent_dist().log_prob(
                         yt[i, ..., 0]
                     )
-                    # gt_joint_loglik = pred_dist.log_prob(yt[i, ..., 0])
                     gt_loglik_list.append(gt_loglik)
 
                 mean_list.append(pred_dist.mean)
-                std_list.append(pred_dist.stddev)
+                try:
+                    std_list.append(pred_dist.stddev)
+                except RuntimeError:
+                    std_list.append(pred_dist.covariance_matrix.diagonal() ** 0.5)
 
         mean = torch.stack(mean_list, dim=0)
         std = torch.stack(std_list, dim=0)
@@ -155,7 +157,6 @@ class GPGenerator(ABC):
             Tuple[RandomHyperparameterKernel, ...],
         ],
         noise_std: float,
-        ard_num_dims: Optional[int] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -165,7 +166,6 @@ class GPGenerator(ABC):
             self.kernel = tuple(self.kernel)
 
         self.noise_std = noise_std
-        self.ard_num_dims = ard_num_dims
 
     def set_up_gp(self) -> GPGroundTruthPredictor:
         if isinstance(self.kernel, tuple):

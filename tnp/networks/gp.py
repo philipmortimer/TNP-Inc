@@ -1,7 +1,12 @@
+import random
 from abc import ABC
+from functools import partial
+from typing import Tuple
 
 import gpytorch
 import torch
+
+from tnp.networks.kernels import GibbsKernel, gibbs_switching_lengthscale_fn
 
 
 class RandomHyperparameterKernel(ABC, gpytorch.kernels.Kernel):
@@ -125,3 +130,26 @@ class CosineKernel(gpytorch.kernels.CosineKernel, RandomHyperparameterKernel):
 
         period = 10.0**log10_period
         self.period_length = period
+
+
+class RandomGibbsKernel(GibbsKernel, RandomHyperparameterKernel):
+    def __init__(
+        self,
+        changepoints: Tuple[float, ...],
+        directions: Tuple[bool, ...] = (True, False),
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.changepoints = tuple(changepoints)
+        self.directions = tuple(directions)
+
+    def sample_hyperparameters(self):
+        # Sample changepoint.
+        direction = random.choice(self.directions)
+        changepoint = random.choice(self.changepoints)
+
+        self.lengthscale_fn = partial(
+            gibbs_switching_lengthscale_fn,
+            changepoint=changepoint,
+            direction=direction,
+        )
