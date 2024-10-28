@@ -1,7 +1,8 @@
 import argparse
+import itertools
 import os
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import hiyapyco
 import lightning.pytorch as pl
@@ -45,6 +46,31 @@ def create_default_config() -> DictConfig:
     return OmegaConf.create(default_config)
 
 
+def _product_resolver(target: str, param_dict: Dict[str, List[Any]]) -> List[Dict]:
+    """Resolver for itertools.product that creates object configs with named arguments.
+
+    Args:
+        target: The _target_ path for object initialization
+        param_dict: Dictionary of argument names to lists of values
+    """
+    # Get the names and value lists
+    names = list(param_dict.keys())
+    value_lists = [
+        (
+            param_dict[name]
+            if isinstance(param_dict[name], Iterable)
+            else [param_dict[name]]
+        )
+        for name in names
+    ]
+
+    # Create a list of object configs
+    return [
+        {"_target_": target, **dict(zip(names, combo))}
+        for combo in itertools.product(*value_lists)
+    ]
+
+
 def extract_config(
     raw_config: Union[str, Dict],
     config_changes: Optional[List[str]] = None,
@@ -63,6 +89,10 @@ def extract_config(
     # Register eval.
     if not OmegaConf.has_resolver("eval"):
         OmegaConf.register_new_resolver("eval", eval)
+
+    # Register product.
+    if not OmegaConf.has_resolver("product"):
+        OmegaConf.register_new_resolver("product", _product_resolver)
 
     if isinstance(raw_config, str):
         config = OmegaConf.load(raw_config)
@@ -110,6 +140,7 @@ def initialize_experiment() -> DictConfig:
 
     # Initialise experiment, make path.
     config, _ = extract_config(raw_config, config_changes)
+    config = deep_convert_dict(config)
 
     # Instantiate experiment and load checkpoint.
     pl.seed_everything(config.misc.seed)
