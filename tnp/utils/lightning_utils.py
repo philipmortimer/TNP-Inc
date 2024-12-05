@@ -35,7 +35,7 @@ class LitWrapper(pl.LightningModule):
         # Keep these for analysing.
         self.test_outputs: List[Any] = []
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["model"])
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -59,7 +59,7 @@ class LitWrapper(pl.LightningModule):
 
         # Compute metrics to track.
         loglik = pred_dist.log_prob(batch.yt).sum() / batch.yt[..., 0].numel()
-        rmse = nn.functional.mse_loss(pred_dist.mean, batch.yt).sqrt().cpu()
+        rmse = nn.functional.mse_loss(pred_dist.mean, batch.yt).sqrt().cpu().mean()
 
         self.log("val/loglik", loglik, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/rmse", rmse, on_step=False, on_epoch=True, prog_bar=True)

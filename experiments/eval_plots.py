@@ -25,6 +25,7 @@ def main():
         name=eval_name,
         savefig=experiment.misc.savefig,
         logging=experiment.misc.logging,
+        pred_fn=experiment.misc.pred_fn,
     )
 
 

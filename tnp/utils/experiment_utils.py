@@ -180,6 +180,10 @@ def initialize_evaluation() -> DictConfig:
         id=run.id,
     )
 
+    # Set model to run.config.model.
+    if hasattr(run.config, "model") and run.config.model is not None:
+        config.model = run.config.model
+
     # Instantiate.
     pl.seed_everything(config.misc.seed)
     experiment = instantiate(config)
@@ -199,6 +203,7 @@ def initialize_evaluation() -> DictConfig:
             checkpoint_path=ckpt_file,
             map_location="cpu",
             strict=True,
+            model=experiment.model,
         )
     )
 

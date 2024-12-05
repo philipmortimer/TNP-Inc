@@ -59,6 +59,7 @@ def main():
             batches=batches,
             num_fig=min(5, len(batches)),
             name=name,
+            pred_fn=experiment.misc.pred_fn,
         )
 
     if experiment.misc.resume_from_checkpoint is not None:
