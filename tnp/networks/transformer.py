@@ -8,7 +8,11 @@ import torch
 from check_shapes import check_shapes
 from torch import nn
 
-from .attention_layers import MultiHeadCrossAttentionLayer, MultiHeadSelfAttentionLayer
+from .attention_layers import (
+    MultiHeadCrossAttentionLayer,
+    MultiHeadKRAttentionLayer,
+    MultiHeadSelfAttentionLayer,
+)
 
 
 class TransformerEncoder(nn.Module):
@@ -65,6 +69,31 @@ class TNPTransformerEncoder(nn.Module):
                 raise TypeError("Unknown layer type.")
 
             xt = mhca_layer(xt, xc)
+
+        return xt
+
+
+class TNPKRTransformerEncoder(nn.Module):
+    def __init__(
+        self,
+        num_layers: int,
+        mhkr_layer: MultiHeadKRAttentionLayer,
+    ):
+        super().__init__()
+
+        self.mhkr_layers = _get_clones(mhkr_layer, num_layers)
+
+    @check_shapes(
+        "xc: [m, nc, d]", "xt: [m, nt, d]", "mask: [m, nt, nc]", "return: [m, nt, d]"
+    )
+    def forward(
+        self, xc: torch.Tensor, xt: torch.Tensor, mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        if mask is not None:
+            warnings.warn("mask is not currently being used.")
+
+        for mhkr_layer in self.mhkr_layers:
+            xt, xc = mhkr_layer(xt, xc)
 
         return xt
 

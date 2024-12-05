@@ -133,6 +133,31 @@ class MultiHeadCrossAttention(BaseMultiHeadAttention):
         return super().propagate(xq, xkv, xkv, mask)
 
 
+class MultiHeadKRAttention(BaseMultiHeadAttention):
+    def __init__(self, *, embed_dim: int, **kwargs):
+        super().__init__(qk_dim=embed_dim, v_dim=embed_dim, **kwargs)
+
+    @check_shapes(
+        "xq: [m, nq, dx]",
+        "xkv: [m, nkv, dx]",
+        "mask: [m, nq, nkv]",
+        "return[0]: [m, nq, dx]",
+        "return[1]: [m, nkv, dx]",
+    )
+    def forward(
+        self, xq: torch.Tensor, xkv: torch.Tensor, mask: Optional[torch.Tensor] = None
+    ):
+        # Concatenate queries and keys.
+        xqk = torch.cat([xq, xkv], dim=-2)
+
+        out = super().propagate(xqk, xkv, xkv, mask)
+
+        # Split into query and key output.
+        outq, outk = torch.split(out, [xq.shape[-2], xkv.shape[-2]], dim=-2)
+
+        return outq, outk
+
+
 @check_shapes(
     "q: [m, h, nq, dqk]",
     "k: [m, h, nkv, dqk]",
