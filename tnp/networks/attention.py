@@ -134,6 +134,7 @@ class MultiHeadCrossAttention(BaseMultiHeadAttention):
 
 
 class MultiHeadKRAttention(BaseMultiHeadAttention):
+    """https://arxiv.org/abs/2411.12502."""
     def __init__(self, *, embed_dim: int, **kwargs):
         super().__init__(qk_dim=embed_dim, v_dim=embed_dim, **kwargs)
 
