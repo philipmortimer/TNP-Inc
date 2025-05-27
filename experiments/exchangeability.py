@@ -61,17 +61,6 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device):
         xc, yc, xt, yt = xc.to(device), yc.to(device), xt.to(device), yt.to(device)
         nc = xc.shape[1]
         perms_ctx = torch.stack([torch.randperm(nc, device=device) for _ in range(no_permutations)])
-        # Sanity check - to be deleted. For TNP this should return true (context permutation invariance up to numerical precision)
-        # Yet for some reason this is false - presumably the tnp arch is not context invariant??
-        perm_ran = torch.randperm(nc)
-        xc_rand = xc[:, perm_ran, :]
-        yc_rand = yc[:, perm_ran, :]
-        same = torch.allclose(models_with_different_seeds[0](xc, yc, xt).loc,
-                            models_with_different_seeds[0](xc_rand, yc_rand, xt).loc)
-        same_var = torch.allclose(models_with_different_seeds[0](xc, yc, xt).scale,
-                            models_with_different_seeds[0](xc_rand, yc_rand, xt).scale)
-        print(same)
-        print(same_var)
         mods_out = []
         # Computes m_var for each model
         for model  in models_with_different_seeds:
