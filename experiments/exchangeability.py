@@ -18,37 +18,22 @@ def m_var(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: t
     K = perms_ctx.shape[0]
     m, nc = xc.shape[0], xc.shape[1]
 
-    # Permutes context points using perms_ctx
-    idx = perms_ctx[:, None, :, None] # Expands to [K, 1, nc, 1]
-    xc_perm  = torch.gather(
-        xc[None].expand(K, -1, -1, -1), # Expands xc to [K, m, nc, dx]
-        dim=2,  # Gathers along context dim - i.e. reorder the context points
-        index=idx.expand(-1, m, -1, xc.size(-1)) # idx is [K, 1, nc, 1], expands to [K, m, nc, dx]
-    ) # xc_perm is [K, m, nc, dx]                                  
-    yc_perm  = torch.gather(
-        yc[None].expand(K, -1, -1, -1), 
-        2,
-        idx.expand(-1, m, -1, yc.size(-1))
-    ) # yc_perm is [K, m, nc, dy]
-
-    # Flattens context points and target points (which are repeated as we don't permute targets)
-    # This allows us to compute with one model call - which will be parallelised under the hood.
-    # However this may leads to memory issues for lots permutations / ctx points / batches - may want to refactor this as needed.
-    xc_flat, yc_flat = xc_perm.flatten(0, 1), yc_perm.flatten(0, 1) # Flattens [K, m, ...] first two dims to [K * m, ...]
-    xt_flat, yt_flat = xt.repeat_interleave(K, dim=0), yt.repeat_interleave(K, dim=0) # Can try just replacing this with xt, yt and hope for broadcasting
-
-    # Computes log joint - then computes variance over the K permuatations
-    log_prob = tnp_model(xc_flat, yc_flat, xt_flat).log_prob(yt_flat) # [K * m, n_t, d_y]
-    assert log_prob.shape[0] == K * m # Checks that model call actually vectorises as expected - for debug.
-    log_prob = log_prob.view(K, m, -1).sum(-1) # sums over target dim, resulting in [K, m]
-    variance = log_prob.var(dim=0, unbiased=True) # Variance over K - this is Var_PI from eq 5 in paper (this gives [m])
+    # Loops through each permutation - note tried stacking them to make faster but had weird bugs. This is also more readable.
+    log_probs_list = []
+    for k in range(K):
+        xc_perm = xc[:, perms_ctx[k], :]
+        yc_perm = yc[:, perms_ctx[k], :]
+        log_p = tnp_model(xc_perm, yc_perm, xt).log_prob(yt) # [m, nt, dy]
+        log_p = log_p.sum(dim=(-1, -2)) # nt and dy giving shape [m]
+        log_probs_list.append(log_p)
+    log_probs = torch.stack(log_probs_list, dim=0) # [K, m]
+    variance = log_probs.var(dim=0, unbiased=True) # Variance over K - this is Var_PI from eq 5 in paper (this gives [m])
     m_var_val = variance.mean().item() # Mean over m batches sampled from D^(n) - ie the monte-carlo approximation of the expectation
     # Note - in this current implementation we only permutes the final full context. We don't account for incremental context points.
     # This may need reconsidering when we consider the masked variant with incremental learning. 
     # This func computes E_{(C, T) ~ D^(n)}[Var_{PI}[sigma_{j=1}^{nt} log p_{\theta}(y_{t, j} | C_{PI}, x_{t, j})]]
     # when using a non-diagonal TNP. The inner expression changes when using different NPs (e.g. autoreg) and this needs to be considered also.
     return m_var_val
-
 
 
 # Samples variance over trained models with different seeds
@@ -90,7 +75,7 @@ def exchangeability_test(models, data, no_permutations=128, device='cuda'):
 
 if __name__ == "__main__":
     experiment = initialize_experiment() # Gets config file
-    model = experiment.model # Gets type of model
+    model_arch = experiment.model # Gets type of model
     # Data generator
     gen_val = experiment.generators.val
     val_loader = torch.utils.data.DataLoader(
@@ -109,16 +94,23 @@ if __name__ == "__main__":
         persistent_workers=True if experiment.misc.num_val_workers > 0 else False,
         pin_memory=True,
     )
-    # Example usage - ammend with specific model paths and data etc
-    model_paths = ["/scratch/pm846/TNP/checkpoints/epoch=499-step=500000.ckpt"]
-    # Loads models
+
     models = []
-    for model_name in model_paths:
-        # Takes in local cptk file path but will probably want to expand to support weights and biases model
-        mod = LitWrapper.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
-                model_name, model=model
-            )
-        mod = mod.model
-        mod.eval()
-        models.append(mod)
+    use_weights = True # Defines if local checkpoints are to be used
+    if use_weights:
+        # Example usage - ammend with specific model paths and data etc
+        model_paths = ["/scratch/pm846/TNP/checkpoints/epoch=499-step=500000.ckpt"]
+        # Loads models
+        for model_name in model_paths:
+            # Takes in local cptk file path but will probably want to expand to support weights and biases model
+            mod = LitWrapper.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
+                    model_name, model=model_arch
+                )
+            mod = mod.model
+            mod.eval()
+            models.append(mod)
+    else:
+        model_arch.to('cuda')
+        model_arch.eval()
+        models.append(model_arch)
     exchangeability_test(models, val_loader, no_permutations=2, device='cuda')
