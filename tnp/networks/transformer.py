@@ -73,6 +73,43 @@ class TNPTransformerEncoder(nn.Module):
         return xt
 
 
+# TNPTransformerEncoder but the mask is applied to the context (ie only the self attention)
+class TNPTransformerMaskedEncoder(nn.Module):
+    def __init__(
+        self,
+        num_layers: int,
+        mhca_layer: MultiHeadCrossAttentionLayer,
+        mhsa_layer: Optional[MultiHeadSelfAttentionLayer] = None,
+    ):
+        super().__init__()
+
+        self.mhca_layers = _get_clones(mhca_layer, num_layers)
+        self.mhsa_layers = (
+            self.mhca_layers
+            if mhsa_layer is None
+            else _get_clones(mhsa_layer, num_layers)
+        )
+
+    @check_shapes(
+        "xc: [m, nc, d]", "xt: [m, nt, d]", "mask: [m, nc, nc]", "return: [m, nt, d]"
+    )
+    def forward(
+        self, xc: torch.Tensor, xt: torch.Tensor, mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+
+        for mhsa_layer, mhca_layer in zip(self.mhsa_layers, self.mhca_layers):
+            if isinstance(mhsa_layer, MultiHeadSelfAttentionLayer):
+                xc = mhsa_layer(xc, mask=mask)
+            elif isinstance(mhsa_layer, MultiHeadCrossAttentionLayer):
+                xc = mhsa_layer(xc, xc, mask=mask)
+            else:
+                raise TypeError("Unknown layer type.")
+
+            xt = mhca_layer(xt, xc)
+
+        return xt
+
+
 class TNPKRTransformerEncoder(nn.Module):
     def __init__(
         self,

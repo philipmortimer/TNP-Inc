@@ -6,6 +6,7 @@ from check_shapes import check_shapes
 from tnp.utils.experiment_utils import initialize_experiment
 from tnp.utils.data_loading import adjust_num_batches
 from tnp.utils.lightning_utils import LitWrapper
+import time
 
 # Computes log joint variance of model - use Eq 5 but only for a fixed target and context set
 @check_shapes(
@@ -77,9 +78,12 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device):
 # Computes the exchangeability - this is the function to be called when computing exchangeability
 def exchangeability_test(models, data, no_permutations=128, device='cuda'):
     assert no_permutations >= 2, "Must have at least 2 permutations to compute variance"
+    start_time = time.time()
     # Logs exchangeability
     mean, half_w = exchange(models, data, no_permutations, device)
+    end_time = time.time()
     if half_w is None: half_w = 'N/A'
+    print(f"Exchangeability test time: {end_time - start_time:.4f} seconds")
     print(f"Exchangeability: {mean} +/- {half_w}")
 
 if __name__ == "__main__":
