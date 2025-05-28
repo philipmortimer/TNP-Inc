@@ -7,12 +7,12 @@ from tnp.utils.experiment_utils import initialize_experiment
 from tnp.utils.data_loading import adjust_num_batches
 from tnp.utils.lightning_utils import LitWrapper
 
-# Computes log joint variance of model
+# Computes log joint variance of model - use Eq 5 but only for a fixed target and context set
 @check_shapes(
     "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]"
 )
 @torch.no_grad()
-def m_var(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, perms_ctx: torch.Tensor):
+def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, perms_ctx: torch.Tensor):
     # perms_ctx = [K, nc] - K permutations for nc context points with their indices in the tensor
     perms_ctx = perms_ctx.to(xc.device)
     K = perms_ctx.shape[0]
@@ -24,7 +24,7 @@ def m_var(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: t
         xc_perm = xc[:, perms_ctx[k], :]
         yc_perm = yc[:, perms_ctx[k], :]
         log_p = tnp_model(xc_perm, yc_perm, xt).log_prob(yt) # [m, nt, dy]
-        log_p = log_p.sum(dim=(-1, -2)) # nt and dy giving shape [m]
+        log_p = log_p.sum(dim=(-1, -2)) # nt and dy giving shape [m] this gives us joint
         log_probs_list.append(log_p)
     log_probs = torch.stack(log_probs_list, dim=0) # [K, m]
     variance = log_probs.var(dim=0, unbiased=True) # Variance over K - this is Var_PI from eq 5 in paper (this gives [m])
@@ -34,6 +34,15 @@ def m_var(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: t
     # This func computes E_{(C, T) ~ D^(n)}[Var_{PI}[sigma_{j=1}^{nt} log p_{\theta}(y_{t, j} | C_{PI}, x_{t, j})]]
     # when using a non-diagonal TNP. The inner expression changes when using different NPs (e.g. autoreg) and this needs to be considered also.
     return m_var_val
+
+# Computes log joint variance of model. Uses eq 5 
+@check_shapes(
+    "x: [m, n, dx]", "y: [m, n, dy]", "perms_ctx: [K, nc]"
+)
+@torch.no_grad()
+def m_var_autoreg(tnp_model, x: torch.Tensor, y: torch.Tensor, perms_ctx: torch.Tensor):
+    # TODO: Implement this
+    return 0
 
 
 # Samples variance over trained models with different seeds
@@ -49,7 +58,7 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device):
         mods_out = []
         # Computes m_var for each model
         for model  in models_with_different_seeds:
-            mods_out.append(m_var(model, xc, yc, xt, yt, perms_ctx))
+            mods_out.append(m_var_fixed(model, xc, yc, xt, yt, perms_ctx))
         print(mods_out)
         m_vars.append(mods_out)
         break
@@ -74,6 +83,7 @@ def exchangeability_test(models, data, no_permutations=128, device='cuda'):
     print(f"Exchangeability: {mean} +/- {half_w}")
 
 if __name__ == "__main__":
+    # E.g. run with: python experiments/exchangeability.py --config experiments/configs/synthetic1d/gp_plain_tnp.yml
     experiment = initialize_experiment() # Gets config file
     model_arch = experiment.model # Gets type of model
     # Data generator
@@ -96,7 +106,7 @@ if __name__ == "__main__":
     )
 
     models = []
-    use_weights = True # Defines if local checkpoints are to be used
+    use_weights = False # Defines if local checkpoints are to be used
     if use_weights:
         # Example usage - ammend with specific model paths and data etc
         model_paths = ["/scratch/pm846/TNP/checkpoints/epoch=499-step=500000.ckpt"]
