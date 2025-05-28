@@ -125,6 +125,7 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
 
     mean_m_vars = model_vars.mean() # Mean over the models
     mean_m_nlls = model_nlls.mean() # Mean NLL over the models
+
     # Can't do t test with single model
     if no_models == 1:
         return (mean_m_vars, None), (mean_m_nlls, None)
@@ -139,6 +140,7 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
 def exchangeability_test(models, data, no_permutations=20, device='cuda', use_autoreg_eq=True, max_samples=100, max_seq_len=None, batch_size=16):
     assert no_permutations >= 2, "Must have at least 2 permutations to compute variance"
     data.batch_size=batch_size
+    # TODO: fix dataloader to ensure that n is fixed for all batches (we MUST average over the same n each time)
     val_loader = torch.utils.data.DataLoader(
         data,
         batch_size=None,
@@ -191,4 +193,4 @@ if __name__ == "__main__":
         model_arch.to('cuda')
         model_arch.eval()
         models.append(model_arch)
-    exchangeability_test(models, gen_val, no_permutations=2, device='cuda', use_autoreg_eq=True, max_samples = 2, max_seq_len = None, batch_size=16)
+    exchangeability_test(models, gen_val, no_permutations=2, device='cuda', use_autoreg_eq=True, max_samples = 1, max_seq_len = 100, batch_size=16)
