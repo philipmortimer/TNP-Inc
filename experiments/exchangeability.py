@@ -8,6 +8,9 @@ from tnp.utils.data_loading import adjust_num_batches
 from tnp.utils.lightning_utils import LitWrapper
 import time
 import warnings
+from tnp.data.gp import RandomScaleGPGenerator
+from tnp.networks.gp import RBFKernel
+from functools import partial
 
 # Computes log joint variance of model - use Eq 5 but only for a fixed target and context set
 @check_shapes(
@@ -82,18 +85,27 @@ def m_var_autoreg(tnp_model, x: torch.Tensor, y: torch.Tensor, perms: torch.Tens
 
 
 # Samples variance over trained models with different seeds
-def exchange(models_with_different_seeds, data_loader, no_permutations, device, use_autoreg_eq, max_samples, max_seq_len):
+def exchange(models_with_different_seeds, data_loader, no_permutations, device, use_autoreg_eq, max_samples, seq_len):
     no_models = len(models_with_different_seeds)
 
     m_vars = []
     m_nlls = []
     i = 0
+    nc_prev, nt_prev = None, None
     for data in data_loader:
+        # Ensures sequence length is correct and that nc and nt remain constant over samples.
+        # This prevents greater variance for longer sequences (ie lacking comparison) but comes at cost of expressivity.
+        # Could normalise variances or look at multiple sequence lengths.
+        seq_len_data = data.x.shape[1]
+        assert seq_len_data == seq_len, f"Data sequence length {seq_len_data} does not match required sequence length {seq_len}."
+        if nc_prev is not None and nt_prev is not None:
+            assert data.xc.shape[1] == nc_prev, f"Context set size {data.xc.shape[1]} does not match previous size {nc_prev}."
+            assert data.xt.shape[1] == nt_prev, f"Target set size {data.xt.shape[1]} does not match previous size {nt_prev}."
+        nc_prev, nt_prev = data.xc.shape[1], data.xt.shape[1]
+
         if use_autoreg_eq:
             x, y = data.x, data.y
             x, y = x.to(device), y.to(device)
-            if max_seq_len is not None:
-                x, y = x[:, :max_seq_len, :], y[:, :max_seq_len, :]  # Restrics to having a maximum sequence length for computational reasons
             n = x.shape[1]
             perms = torch.stack([torch.randperm(n, device=device) for _ in range(no_permutations)])
         else:
@@ -101,8 +113,6 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
             xc, yc, xt, yt = xc.to(device), yc.to(device), xt.to(device), yt.to(device)
             nc, nt = xc.shape[1], xt.shape[1]
             n = nc + nt
-            if max_seq_len is not None and nc + nt > max_seq_len:
-                warnings.warn(f"Max sequence length of {max_seq_len} exceeded ({n}) for shortened test but not actually trunctated.")
                 
             perms = torch.stack([torch.randperm(nc, device=device) for _ in range(no_permutations)])
         mods_out_mvar = []
@@ -116,6 +126,8 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
         m_nlls.append(mods_out_mnll)
         i += 1
         if max_samples is not None and  i >= max_samples: break
+
+    assert i>=1, "No data batches were processed."
 
     m_vars = np.array(m_vars)
     m_nlls = np.array(m_nlls)
@@ -137,7 +149,7 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
     return (mean_m_vars, half_w_m_var), (mean_m_nlls, half_w_m_nll)
 
 # Computes the exchangeability - this is the function to be called when computing exchangeability
-def exchangeability_test(models, data, no_permutations=20, device='cuda', use_autoreg_eq=True, max_samples=100, max_seq_len=None, batch_size=16):
+def exchangeability_test(models, data, no_permutations=20, device='cuda', use_autoreg_eq=False, max_samples=200, seq_len=100, batch_size=16):
     assert no_permutations >= 2, "Must have at least 2 permutations to compute variance"
     data.batch_size=batch_size
     # TODO: fix dataloader to ensure that n is fixed for all batches (we MUST average over the same n each time)
@@ -159,7 +171,7 @@ def exchangeability_test(models, data, no_permutations=20, device='cuda', use_au
     )
     start_time = time.time()
     # Logs exchangeability
-    (mean_m_var, half_w_m_var), (mean_m_nlls, half_w_m_nll) = exchange(models, val_loader, no_permutations, device, use_autoreg_eq, max_samples, max_seq_len)
+    (mean_m_var, half_w_m_var), (mean_m_nlls, half_w_m_nll) = exchange(models, val_loader, no_permutations, device, use_autoreg_eq, max_samples, seq_len)
     end_time = time.time()
     if half_w_m_var is None: half_w_m_var = 'N/A'
     if half_w_m_nll is None: half_w_m_nll = 'N/A'
@@ -173,8 +185,24 @@ if __name__ == "__main__":
     # E.g. run with: python experiments/exchangeability.py --config experiments/configs/synthetic1d/gp_plain_tnp.yml
     experiment = initialize_experiment() # Gets config file
     model_arch = experiment.model # Gets type of model
-    # Data generator
-    gen_val = experiment.generators.val
+    # RBF kernel params
+    ard_num_dims = 1
+    min_log10_lengthscale = -0.602
+    max_log10_lengthscale = 0.0
+    rbf_kernel_factory = partial(RBFKernel, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
+                         max_log10_lengthscale=max_log10_lengthscale)
+    kernels = [rbf_kernel_factory]
+    # Data generator params
+    nc, nt = 32, 128
+    batch_size = 16
+    context_range = [[-2.0, 2.0]]
+    target_range = [[-4.0, 4.0]]
+    samples_per_epoch = 16_000
+    batch_size = 16
+    deterministic = True
+    gen_val = RandomScaleGPGenerator(dim=1, min_nc=nc, max_nc=nc, min_nt=nt, max_nt=nt, batch_size=batch_size,
+        context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=0.1,
+        deterministic=True, kernel=kernels)
     models = []
     use_weights = False # Defines if local checkpoints are to be used
     if use_weights:
@@ -193,4 +221,4 @@ if __name__ == "__main__":
         model_arch.to('cuda')
         model_arch.eval()
         models.append(model_arch)
-    exchangeability_test(models, gen_val, no_permutations=2, device='cuda', use_autoreg_eq=True, max_samples = 1, max_seq_len = 20, batch_size=16)
+    exchangeability_test(models, gen_val, no_permutations=20, device='cuda', use_autoreg_eq=False, max_samples = 200, seq_len = nc+nt, batch_size=16)
