@@ -221,4 +221,4 @@ if __name__ == "__main__":
         model_arch.to('cuda')
         model_arch.eval()
         models.append(model_arch)
-    exchangeability_test(models, gen_val, no_permutations=20, device='cuda', use_autoreg_eq=False, max_samples = 200, seq_len = nc+nt, batch_size=16)
+    exchangeability_test(models, gen_val, no_permutations=20, device='cuda', use_autoreg_eq=False, max_samples = 100, seq_len = nc+nt, batch_size=16)

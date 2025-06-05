@@ -37,7 +37,7 @@ def main():
         pin_memory=True,
     )
     val_loader = torch.utils.data.DataLoader(
-        gen_val, # Base code uses gen_train here I believe erroneously - can check this.
+        gen_val,
         batch_size=None,
         num_workers=experiment.misc.num_val_workers,
         worker_init_fn=(
