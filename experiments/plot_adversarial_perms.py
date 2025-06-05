@@ -11,6 +11,14 @@ import warnings
 from tnp.data.gp import RandomScaleGPGenerator
 from tnp.networks.gp import RBFKernel
 from functools import partial
+import matplotlib
+import matplotlib.pyplot as plt
+import random
+import os
+import wandb
+
+matplotlib.rcParams["mathtext.fontset"] = "stix"
+matplotlib.rcParams["font.family"] = "STIXGeneral"
 
 # Looks at results of random permutations of the context set
 @check_shapes(
@@ -56,6 +64,35 @@ def gather_rand_perms(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.T
     end_time = time.time()
     return perms, log_p, (data_time, inf_time, end_time - tot_time)
 
+# Takes plot.py as ref and modifies it to plot a specific ordering of context points
+
+
+
+# Generates plots of permutations
+@check_shapes(
+    "perms: [K, nc]", "log_p: [K]", "xc: [1, nc, dx]", "yc: [1, nc, dy]", "xt: [1, nt, dx]", "yt: [1, nt, dy]"
+)
+def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, 
+    folder_path: str="plot_results/adversarial", file_id: str=str(random.randint(0, 1000000))):
+    log_p, indices = torch.sort(log_p)
+    perms = perms[indices]
+    # Visualises permutations of various centiles
+    perf_int = [0, 1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99, 100]
+    for perc in perf_int:
+        perc_idx = round((perc / 100) * (len(perms) - 1))
+        perm, log_prob = perms[perc_idx].cpu().numpy(), log_p[perc_idx].cpu().numpy()
+        plot_perm(model=tnp_model, xc=xc, yc=yc, xt=xt, yt=yt, perm=perm, file_name=folder_path + "/seq_perm_ind_{perc}_id_{file_id}.png")
+        print("PLOTTING PERM")
+
+    # Visualises distribution of permutations / LLs (TODO: implemeny maybe using kendall's tau)
+
+
+
+
+
+
+
+
 if __name__ == "__main__":
     # E.g. run with: python experiments/plot_adversarial_perms.py --config experiments/configs/synthetic1d/gp_plain_tnp.yml
     experiment = initialize_experiment() # Gets config file
@@ -70,7 +107,7 @@ if __name__ == "__main__":
     # Data generator params
     nc, nt = 10, 20
     context_range = [[-2.0, 2.0]]
-    target_range = [[-4.0, 4.0]]
+    target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
     batch_size = 1
     deterministic = True
@@ -78,26 +115,31 @@ if __name__ == "__main__":
         context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=0.1,
         deterministic=True, kernel=kernels)
     data = next(iter(gen_val))
-    models = []
-    use_weights = False # Defines if local checkpoints are to be used
-    if use_weights:
-        # Example usage - ammend with specific model paths and data etc
-        model_paths = ["/scratch/pm846/TNP/checkpoints/epoch=499-step=500000.ckpt"]
-        # Loads models
-        for model_name in model_paths:
-            # Takes in local cptk file path but will probably want to expand to support weights and biases model
-            mod = LitWrapper.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
-                    model_name, model=model_arch
-                )
-            mod = mod.model
-            mod.eval()
-            models.append(mod)
+    tnp_model = None
+    useWandb = True # Defines if weights and biases model is to be used
+    wanddName = 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v0'
+    if useWandb:
+        run = wandb.login()
+        artifact = wandb.Api().artifact(wanddName, type='model')
+        artifact_dir = artifact.download()
+        ckpt_file = os.path.join(artifact_dir, "model.ckpt")
+        print(ckpt_file)
+        lit_model = (
+            LitWrapper.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
+                ckpt_file, model=model_arch,
+            )
+        )
+        tnp_model = lit_model.model
+        tnp_model.eval()
+
     else:
         model_arch.to('cuda')
         model_arch.eval()
-        models.append(model_arch)
+        tnp_model=model_arch
     print("starts")
-    perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(models[0], data.xc, data.yc, data.xt, data.yt, 
-        no_permutations=3000000, device='cuda', batch_size=2048)
+    perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(tnp_model, data.xc, data.yc, data.xt, data.yt, 
+        no_permutations=20, device='cuda', batch_size=2048)
     print(log_p)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
+    visualise_perms(perms, log_p, data.xc, data.yc, data.xt, data.yt, 
+        folder_path="plot_results/adversarial", file_id=str(random.randint(0, 1000000)))
