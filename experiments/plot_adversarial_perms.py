@@ -13,6 +13,8 @@ from tnp.networks.gp import RBFKernel
 from functools import partial
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
 import random
 import os
 import wandb
@@ -22,6 +24,8 @@ from tnp.utils.np_functions import np_pred_fn
 from typing import Callable, List, Tuple, Union, Optional
 from torch import nn
 import copy
+import matplotlib.path as mpath
+import matplotlib.patches as mpatches
 
 matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
@@ -199,7 +203,7 @@ def plot_perm(
     plt.xticks(fontsize=24)
     plt.yticks(fontsize=24)
 
-    plt.legend(loc="bottom right", fontsize=20)
+    plt.legend(fontsize=20)
     plt.tight_layout()
 
     fname = f"{file_name}.png"
@@ -209,6 +213,112 @@ def plot_perm(
         plt.savefig(fname, bbox_inches="tight")
     else:
         plt.show()
+
+    plt.close()
+
+
+def plot_parallel_coordinates_bezier(
+    perms: torch.Tensor,
+    log_p: torch.Tensor,
+    xc: torch.Tensor,
+    xt: torch.Tensor,
+    file_name: str,
+    max_perms_plot: int = 20,
+    curvature_strength: float = 0.2,
+    plot_targets: bool = False
+):
+    K, nc = perms.shape
+    # Selects subset of lines if required
+    if K > max_perms_plot:
+        indices_plot = torch.linspace(0, K - 1, steps=max_perms_plot).long() # Every nth line - so we get wide range
+        #indices_plot = torch.randperm(K)[:max_perms_plot] # Random selection of lines
+        # Select the evenly spaced permutations and their log probabilities
+        perms = perms[indices_plot]
+        log_p = log_p[indices_plot]
+
+    # Convert to cpu
+    perms = perms.cpu()
+    log_p = log_p.cpu()
+    xc = xc.squeeze().cpu()
+    xt = xt.squeeze().cpu()
+    
+
+    # Colourmap
+    sm = ScalarMappable(cmap=plt.get_cmap('plasma'), norm=Normalize(vmin=log_p.min(), vmax=log_p.max()))
+    sm.set_array([])
+
+    fig, ax = plt.subplots(figsize=(15, 10))
+    positions = [i for i in range(nc)]
+
+    # Plots each permutation to graph
+    perm_xs = xc[perms] # [max_perms_plot, nc]
+    for i in range(perm_xs.shape[0]):
+        line_color = sm.to_rgba(log_p[i])
+        points = np.column_stack((positions, perm_xs[i])) # Shape [nc, 2]
+
+        # Bulds a path by introducing a random point to define a curve for the two lines
+        path_cmds = [mpath.Path.MOVETO]
+        path_pts = [points[0]]
+        # Plots lines between points - using bezier curves to enable seeing different lines that go between same two points
+        for j in range(len(points) - 1):
+            p0 = points[j]
+            p1 = points[j+1]
+            
+            midpoint = (p0 + p1) / 2.0
+            perp_vec = np.array([-(p1[1] - p0[1]), p1[0] - p0[0]]) # Perpendicular vector to p1 - p0
+            norm = np.linalg.norm(perp_vec)
+            perp_vec = perp_vec / norm
+            random_offset = (np.random.rand() - 0.5) * 2 * curvature_strength
+            control_point = midpoint + perp_vec * random_offset # Defines offset point for curve
+            path_cmds.extend([mpath.Path.CURVE3, mpath.Path.CURVE3])
+            path_pts.extend([control_point, p1])
+
+        path = mpath.Path(path_pts, path_cmds)
+        patch = mpatches.PathPatch(
+            path, 
+            facecolor='none', 
+            edgecolor=line_color, 
+            linewidth=1.0,
+            alpha=0.4 
+        )
+        ax.add_patch(patch)
+
+    # Grid of black dots to clearly show where context points are - overlayed at each point in sequence
+    positions_grid, xc_values_grid = np.meshgrid(positions, xc.numpy())
+    ax.scatter(
+        positions_grid, 
+        xc_values_grid, 
+        c='black', 
+        s=15,
+        alpha=0.6, 
+        zorder=3, # to ensure they are plotted over lines
+        label='Context Point Locations'
+    )
+
+
+    # Adds target locations as red lines to give indicator of why sampling certain points may be good (i.e. close to target)
+    if plot_targets:
+        for target_x_val in xt:
+            ax.axhline(y=target_x_val, color='red', linestyle='--', linewidth=1.5, alpha=0.7, zorder=2)
+        ax.plot([], [], color='red', linestyle='--', label='Target X-Coordinates')
+
+    # Aesthetics
+    ax.set_xlabel("Context Point Order", fontsize=16)
+    ax.set_ylabel("X-Coordinate of Context Point", fontsize=16)
+    ax.set_title(f"Parallel Coordinates Plot of {perm_xs.shape[0]} Permutations. NC={xc.shape[0]} NT={xt.shape[0]} K={K}", fontsize=20)
+    ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+    ax.set_xticks(positions)
+    ax.set_xticklabels([i+1 for i in positions])
+    ax.tick_params(axis='x', rotation=45)
+    cbar = fig.colorbar(sm, ax=ax, pad=0.01)
+    cbar.set_label("Log-Likelihood", fontsize=16, rotation=270, labelpad=20)
+    x_min, x_max = xc.min() - 0.5, xc.max() + 0.5
+    if plot_targets: x_min, x_max = min(x_min, xt.min() - 0.2), max(x_max, xt.max() + 0.2)
+    ax.set_ylim(x_min, x_max)
+    if plot_targets: ax.legend()
+
+    fname = f"{file_name}.png"
+    plt.savefig(fname, bbox_inches="tight", dpi=200)
 
     plt.close()
 
@@ -223,7 +333,7 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     perms = perms[indices]
     #print(perms)
     #print(log_p)
-    # Visualises permutations of various centiles
+    # Visualises permutations of various centiles (ie best, worst, median etc)
     perf_int = [0, 1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99, 100]
     for perc in perf_int:
         perc_idx = round((perc / 100) * (len(perms) - 1))
@@ -231,10 +341,10 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
         file_name = f"{folder_path}/seq_perm_{perc:03d}_id_{file_id}"
         plot_perm(model=tnp_model, xc=xc, yc=yc, xt=xt, yt=yt, perm=perm, savefig=True, file_name=file_name, gt_pred=gt_pred)
 
-    # Visualises distribution of permutations / LLs (TODO: implemeny maybe using kendall's tau)
-
-
-
+    # Parralel coordinates plot to see permutations ordering
+    file_name = f"{folder_path}/parr_cord_id_{file_id}"
+    plot_targets = xt.shape[1] <= 5 # Plot targets if there are not too many of them
+    plot_parallel_coordinates_bezier(perms=perms,log_p=log_p, xc=xc, xt=xt, file_name=file_name, plot_targets=plot_targets)
 
 
 
@@ -267,7 +377,7 @@ if __name__ == "__main__":
     wanddName = 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200'
     wanddName = 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v0'
     if useWandb:
-        run = wandb.login()
+        #run = wandb.login()
         artifact = wandb.Api().artifact(wanddName, type='model')
         artifact_dir = artifact.download()
         ckpt_file = os.path.join(artifact_dir, "model.ckpt")
@@ -284,10 +394,15 @@ if __name__ == "__main__":
         model_arch.to('cuda')
         model_arch.eval()
         tnp_model=model_arch
+    # Sorts context in order
+    xc = data.xc
+    yc = data.yc
+    xc, indices = torch.sort(xc, dim=1)
+    yc = torch.gather(yc, dim=1, index=indices)
     print("Starting search")
-    perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(tnp_model, data.xc, data.yc, data.xt, data.yt, 
-        no_permutations=9000000, device='cuda', batch_size=1024)
+    perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(tnp_model, xc, yc, data.xt, data.yt, 
+        no_permutations=10_000_000, device='cuda', batch_size=2048)
     #print(log_p)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
-    visualise_perms(tnp_model, perms, log_p, data.xc, data.yc, data.xt, data.yt,
+    visualise_perms(tnp_model, perms, log_p, xc, yc, data.xt, data.yt,
         folder_path="plot_results/adversarial", file_id=str(random.randint(0, 1000000)), gt_pred=data.gt_pred)
