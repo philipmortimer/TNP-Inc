@@ -344,7 +344,8 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     # Parralel coordinates plot to see permutations ordering
     file_name = f"{folder_path}/parr_cord_id_{file_id}"
     plot_targets = xt.shape[1] <= 5 # Plot targets if there are not too many of them
-    plot_parallel_coordinates_bezier(perms=perms,log_p=log_p, xc=xc, xt=xt, file_name=file_name, plot_targets=plot_targets)
+    plot_parallel_coordinates_bezier(perms=perms,log_p=log_p, xc=xc, xt=xt, file_name=file_name, plot_targets=plot_targets,
+        max_perms_plot=20)
 
 
 
@@ -362,7 +363,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 10, 100
+    nc, nt = 10, 5
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
