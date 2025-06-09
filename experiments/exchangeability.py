@@ -184,7 +184,7 @@ def exchangeability_test(models, data, no_permutations=20, device='cuda', use_au
     print("-----------")
     print(f"Exchangeability test time: {end_time - start_time:.4f} seconds")
     print(f"Exchangeability (eq 5): {mean_m_var} +/- {half_w_m_var}")
-    print(f"NLL (eq 6): {mean_m_nlls} +/- {half_w_m_nll}")
+    print(f"LL (eq 6): {mean_m_nlls} +/- {half_w_m_nll}")
     print("-----------")
 
 if __name__ == "__main__":
@@ -199,7 +199,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 32, 128
+    nc, nt = 32, 64 
     batch_size = 16
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
@@ -211,8 +211,8 @@ if __name__ == "__main__":
         deterministic=True, kernel=kernels)
     models = []
     useWandb = True # Defines if weights and biases model is to be used
-    wanddName = 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200'
-    #wanddName = 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v0'
+    #wanddName = 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200'
+    wanddName = 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v0'
     if useWandb:
         artifact = wandb.Api().artifact(wanddName, type='model')
         artifact_dir = artifact.download()

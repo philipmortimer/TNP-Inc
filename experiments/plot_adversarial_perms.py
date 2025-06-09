@@ -26,6 +26,13 @@ from torch import nn
 import copy
 import matplotlib.path as mpath
 import matplotlib.patches as mpatches
+import hiyapyco
+import lightning.pytorch as pl
+import torch
+from hydra.utils import instantiate
+from omegaconf import DictConfig, OmegaConf
+from tnp.utils.experiment_utils import deep_convert_dict, extract_config
+
 
 matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
@@ -206,7 +213,7 @@ def plot_perm(
     plt.legend(fontsize=20)
     plt.tight_layout()
 
-    fname = f"{file_name}.png"
+    fname = f"{file_name}.pdf"
     if wandb.run is not None and logging:
         wandb.log({fname: wandb.Image(fig)})
     elif savefig:
@@ -305,7 +312,7 @@ def plot_parallel_coordinates_bezier(
     # Aesthetics
     ax.set_xlabel("Context Point Order", fontsize=16)
     ax.set_ylabel("X-Coordinate of Context Point", fontsize=16)
-    ax.set_title(f"Parallel Coordinates Plot of {perm_xs.shape[0]} Permutations. NC={xc.shape[0]} NT={xt.shape[0]} K={K}", fontsize=20)
+    ax.set_title(f"Parallel Coordinates Plot of {perm_xs.shape[0]} Permutations. NC={xc.shape[0]} NT={xt.shape[0]} K={K:,}", fontsize=20)
     ax.grid(True, which='both', linestyle='--', linewidth=0.5)
     ax.set_xticks(positions)
     ax.set_xticklabels([i+1 for i in positions])
@@ -317,10 +324,38 @@ def plot_parallel_coordinates_bezier(
     ax.set_ylim(x_min, x_max)
     if plot_targets: ax.legend()
 
-    fname = f"{file_name}.png"
-    plt.savefig(fname, bbox_inches="tight", dpi=200)
+    fname = f"{file_name}.pdf"
+    plt.savefig(fname, bbox_inches="tight", dpi=300)
 
     plt.close()
+
+
+# Plots range of likelihoods with different permutations
+def plot_log_p_bins(log_p, file_name, nc, nt, plain_tnp_perf=None):
+    fig, ax = plt.subplots(figsize=(15, 10))
+
+    lp_mean = log_p.mean()
+    ax.axvline(lp_mean, color="grey", linestyle=":", linewidth=2.0, label=fr"Mean ($\mu={lp_mean:.2f}$)")
+
+    # Histogram
+    ax.hist(log_p, bins='auto', density=True)
+    ax.set_xlabel("Log-Likelihood", fontsize=16)
+    ax.set_ylabel("Density", fontsize=16)
+    ax.set_title(rf"Fluctuation in Log-Likelihood over Different Permutations of Data (NC={nc} NT={nt} K={log_p.shape[0]:,})", fontsize=20)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5)
+    ax.legend(frameon=False, fontsize=10, loc="best")
+    plt.tight_layout()
+    plt.savefig(file_name + "_withoutbasetnp.pdf", bbox_inches="tight", dpi=300)
+    # Adds red line to show the performance of a plain tnp model if it is given
+    if plain_tnp_perf is not None:
+        ax.axvline(plain_tnp_perf, color="red", linestyle="--", linewidth=2.5, 
+            label=fr"TNP-D ($\ell={{{plain_tnp_perf:.2f}}}$)")
+        ax.legend(frameon=False, fontsize=10, loc="best")
+        plt.tight_layout()
+        plt.savefig(file_name + "_withbasetnp.pdf", bbox_inches="tight", dpi=300)
+    plt.close()
+
+
 
 
 # Generates plots of permutations
@@ -328,7 +363,8 @@ def plot_parallel_coordinates_bezier(
     "perms: [K, nc]", "log_p: [K]", "xc: [1, nc, dx]", "yc: [1, nc, dy]", "xt: [1, nt, dx]", "yt: [1, nt, dy]"
 )
 def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, 
-    folder_path: str="plot_results/adversarial", file_id: str=str(random.randint(0, 1000000)), gt_pred: Optional[GroundTruthPredictor] = None):
+    folder_path: str="plot_results/adversarial", file_id: str=str(random.randint(0, 1000000)), gt_pred: Optional[GroundTruthPredictor] = None,
+    plain_tnp_model = None):
     log_p, indices = torch.sort(log_p)
     perms = perms[indices]
     #print(perms)
@@ -347,14 +383,51 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     plot_parallel_coordinates_bezier(perms=perms,log_p=log_p, xc=xc, xt=xt, file_name=file_name, plot_targets=plot_targets,
         max_perms_plot=20)
 
+    # Bins log probabilities to show variation in log probability with differing permutations
+    plain_tnp_mean = None
+    if plain_tnp_model is not None: 
+        dev = 'cuda'
+        plain_tnp_mean = plain_tnp_model(xc.to(dev), yc.to(dev), xt.to(dev)).log_prob(yt.to(dev)).sum(dim=(-1, -2)).item()
+    plot_log_p_bins(log_p.cpu(), f"{folder_path}/bins_dist_id_{file_id}", xc.shape[1], xt.shape[1], plain_tnp_mean)
+
+def get_model(config_path, weights_and_bias_ref, device='cuda'):
+    raw_config = deep_convert_dict(
+        hiyapyco.load(
+            config_path,
+            method=hiyapyco.METHOD_MERGE,
+            usedefaultyamlloader=True,
+        )
+    )
+
+    # Initialise experiment, make path.
+    config, _ = extract_config(raw_config, None)
+    config = deep_convert_dict(config)
+
+    # Instantiate experiment and load checkpoint.
+    pl.seed_everything(config.misc.seed)
+    experiment = instantiate(config)
+    experiment.config = config
+    pl.seed_everything(experiment.misc.seed)
+
+    # Loads weights and bias model
+    artifact = wandb.Api().artifact(weights_and_bias_ref, type='model')
+    artifact_dir = artifact.download()
+    ckpt_file = os.path.join(artifact_dir, "model.ckpt")
+    lit_model = (
+        LitWrapper.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
+            ckpt_file, model=experiment.model,
+        )
+    )
+    model = lit_model.model
+    model.to(device)
+    return model
+
 
 
 
 
 if __name__ == "__main__":
-    # E.g. run with: python experiments/plot_adversarial_perms.py --config experiments/configs/synthetic1d/gp_plain_tnp.yml
-    experiment = initialize_experiment() # Gets config file
-    model_arch = experiment.model # Gets type of model
+    # E.g. run with: python experiments/plot_adversarial_perms.py
     # RBF kernel params
     ard_num_dims = 1
     min_log10_lengthscale = -0.602
@@ -363,7 +436,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 10, 5
+    nc, nt = 10, 20
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
@@ -373,36 +446,25 @@ if __name__ == "__main__":
         context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=0.1,
         deterministic=True, kernel=kernels)
     data = next(iter(gen_val))
-    tnp_model = None
-    useWandb = True # Defines if weights and biases model is to be used
-    wanddName = 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200'
-    wanddName = 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v0'
-    if useWandb:
-        artifact = wandb.Api().artifact(wanddName, type='model')
-        artifact_dir = artifact.download()
-        ckpt_file = os.path.join(artifact_dir, "model.ckpt")
-        print(ckpt_file)
-        lit_model = (
-            LitWrapper.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
-                ckpt_file, model=model_arch,
-            )
-        )
-        tnp_model = lit_model.model
-        tnp_model.eval()
+    # Gets plain model
+    plain_model = get_model('experiments/configs/synthetic1dRBF/gp_plain_tnp.yml', 
+        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', device='cuda')
+    plain_model.eval()
 
-    else:
-        model_arch.to('cuda')
-        model_arch.eval()
-        tnp_model=model_arch
+    masked_model = get_model('experiments/configs/synthetic1dRBF/gp_causal_tnp.yml', 
+        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v0')
+    masked_model.eval()
+
     # Sorts context in order
     xc = data.xc
     yc = data.yc
     xc, indices = torch.sort(xc, dim=1)
     yc = torch.gather(yc, dim=1, index=indices)
     print("Starting search")
-    perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(tnp_model, xc, yc, data.xt, data.yt, 
-        no_permutations=10_000_000, device='cuda', batch_size=2048)
+    perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(masked_model, xc, yc, data.xt, data.yt, 
+        no_permutations=1_000_000, device='cuda', batch_size=2048)
     #print(log_p)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
-    visualise_perms(tnp_model, perms, log_p, xc, yc, data.xt, data.yt,
-        folder_path="plot_results/adversarial", file_id=str(random.randint(0, 1000000)), gt_pred=data.gt_pred)
+    visualise_perms(masked_model, perms, log_p, xc, yc, data.xt, data.yt,
+        folder_path="plot_results/adversarial", file_id=str(random.randint(0, 1000000)), gt_pred=data.gt_pred, 
+        plain_tnp_model=plain_model)
