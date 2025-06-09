@@ -232,7 +232,7 @@ def plot_parallel_coordinates_bezier(
     file_name: str,
     max_perms_plot: int = 20,
     curvature_strength: float = 0.2,
-    plot_targets: bool = False
+    plot_targets: bool = False,
 ):
     K, nc = perms.shape
     # Selects subset of lines if required
@@ -372,14 +372,14 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     #print(perms)
     #print(log_p)
     file_name = f"{folder_path}/plain_tnp_id_{file_id}"
-    plot_perm(model=plain_tnp_model, xc=xc, yc=yc, xt=xt, yt=yt, perm=perms[0], savefig=True, file_name=file_name, gt_pred=gt_pred)
+    plot_perm(model=plain_tnp_model, xc=xc, yc=yc, xt=xt, yt=yt, perm=perms[0], savefig=True, file_name=file_name, gt_pred=gt_pred, annotate=False)
     # Visualises permutations of various centiles (ie best, worst, median etc)
     perf_int = [0, 1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99, 100]
     for perc in perf_int:
         perc_idx = round((perc / 100) * (len(perms) - 1))
         perm, log_prob = perms[perc_idx], log_p[perc_idx]
         file_name = f"{folder_path}/seq_perm_{perc:03d}_id_{file_id}"
-        plot_perm(model=tnp_model, xc=xc, yc=yc, xt=xt, yt=yt, perm=perm, savefig=True, file_name=file_name, gt_pred=gt_pred)
+        plot_perm(model=tnp_model, xc=xc, yc=yc, xt=xt, yt=yt, perm=perm, savefig=True, file_name=file_name, gt_pred=gt_pred, annotate=True)
 
     # Parralel coordinates plot to see permutations ordering
     file_name = f"{folder_path}/parr_cord_id_{file_id}"
@@ -439,7 +439,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 32, 64
+    nc, nt = 10, 5
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
@@ -455,7 +455,7 @@ if __name__ == "__main__":
     plain_model.eval()
 
     masked_model = get_model('experiments/configs/synthetic1dRBF/gp_causal_tnp.yml', 
-        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v0')
+        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200')
     masked_model.eval()
 
     # Sorts context in order

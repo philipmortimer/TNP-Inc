@@ -158,7 +158,6 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
 def exchangeability_test(models, data, no_permutations=20, device='cuda', use_autoreg_eq=False, max_samples=200, seq_len=100, batch_size=16):
     assert no_permutations >= 2, "Must have at least 2 permutations to compute variance"
     data.batch_size=batch_size
-    # TODO: fix dataloader to ensure that n is fixed for all batches (we MUST average over the same n each time)
     val_loader = torch.utils.data.DataLoader(
         data,
         batch_size=None,
@@ -212,7 +211,7 @@ if __name__ == "__main__":
     models = []
     useWandb = True # Defines if weights and biases model is to be used
     #wanddName = 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200'
-    wanddName = 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v0'
+    wanddName = 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200'
     if useWandb:
         artifact = wandb.Api().artifact(wanddName, type='model')
         artifact_dir = artifact.download()
