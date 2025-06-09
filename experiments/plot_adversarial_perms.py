@@ -336,6 +336,8 @@ def plot_log_p_bins(log_p, file_name, nc, nt, plain_tnp_perf=None):
 
     lp_mean = log_p.mean()
     ax.axvline(lp_mean, color="grey", linestyle=":", linewidth=2.0, label=fr"Mean ($\mu={lp_mean:.2f}$)")
+    lp_median = log_p.median()
+    ax.axvline(lp_median, color="black", linestyle=":", linewidth=2.0, label=fr"Median ($\mathrm{{median}} = {lp_median:.2f}$)")
 
     # Histogram
     ax.hist(log_p, bins='auto', density=True)
@@ -437,7 +439,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 10, 30
+    nc, nt = 32, 64
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
@@ -463,7 +465,7 @@ if __name__ == "__main__":
     yc = torch.gather(yc, dim=1, index=indices)
     print("Starting search")
     perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(masked_model, xc, yc, data.xt, data.yt, 
-        no_permutations=10_000_000, device='cuda', batch_size=2048)
+        no_permutations=1_000_000, device='cuda', batch_size=2048)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
     visualise_perms(masked_model, perms, log_p, xc, yc, data.xt, data.yt,
         folder_path="plot_results/adversarial", file_id=str(random.randint(0, 1000000)), gt_pred=data.gt_pred, 
