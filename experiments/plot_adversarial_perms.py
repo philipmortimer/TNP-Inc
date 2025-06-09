@@ -369,6 +369,8 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     perms = perms[indices]
     #print(perms)
     #print(log_p)
+    file_name = f"{folder_path}/plain_tnp_id_{file_id}"
+    plot_perm(model=plain_tnp_model, xc=xc, yc=yc, xt=xt, yt=yt, perm=perms[0], savefig=True, file_name=file_name, gt_pred=gt_pred)
     # Visualises permutations of various centiles (ie best, worst, median etc)
     perf_int = [0, 1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99, 100]
     for perc in perf_int:
@@ -386,8 +388,7 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     # Bins log probabilities to show variation in log probability with differing permutations
     plain_tnp_mean = None
     if plain_tnp_model is not None: 
-        dev = 'cuda'
-        plain_tnp_mean = plain_tnp_model(xc.to(dev), yc.to(dev), xt.to(dev)).log_prob(yt.to(dev)).sum(dim=(-1, -2)).item()
+        plain_tnp_mean = plain_tnp_model(xc, yc, xt).log_prob(yt).sum(dim=(-1, -2)).item()
     plot_log_p_bins(log_p.cpu(), f"{folder_path}/bins_dist_id_{file_id}", xc.shape[1], xt.shape[1], plain_tnp_mean)
 
 def get_model(config_path, weights_and_bias_ref, device='cuda'):
@@ -436,7 +437,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 10, 20
+    nc, nt = 10, 30
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
@@ -448,7 +449,7 @@ if __name__ == "__main__":
     data = next(iter(gen_val))
     # Gets plain model
     plain_model = get_model('experiments/configs/synthetic1dRBF/gp_plain_tnp.yml', 
-        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', device='cuda')
+        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200')
     plain_model.eval()
 
     masked_model = get_model('experiments/configs/synthetic1dRBF/gp_causal_tnp.yml', 
@@ -462,8 +463,7 @@ if __name__ == "__main__":
     yc = torch.gather(yc, dim=1, index=indices)
     print("Starting search")
     perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(masked_model, xc, yc, data.xt, data.yt, 
-        no_permutations=1_000_000, device='cuda', batch_size=2048)
-    #print(log_p)
+        no_permutations=10_000_000, device='cuda', batch_size=2048)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
     visualise_perms(masked_model, perms, log_p, xc, yc, data.xt, data.yt,
         folder_path="plot_results/adversarial", file_id=str(random.randint(0, 1000000)), gt_pred=data.gt_pred, 
