@@ -449,7 +449,7 @@ if __name__ == "__main__":
         context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=0.1,
         deterministic=True, kernel=kernels)
     data = next(iter(gen_val))
-    # Gets plain model
+    # Gets plain model - ensure these strings are correct
     plain_model = get_model('experiments/configs/synthetic1dRBF/gp_plain_tnp.yml', 
         'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200')
     plain_model.eval()
