@@ -439,7 +439,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 10, 30
+    nc, nt = 32, 64
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
