@@ -11,6 +11,8 @@ import warnings
 from tnp.data.gp import RandomScaleGPGenerator
 from tnp.networks.gp import RBFKernel
 from functools import partial
+import wandb
+import os
 
 # Computes log joint variance of model - use Eq 5 but only for a fixed target and context set
 @check_shapes(
@@ -108,6 +110,8 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
             x, y = x.to(device), y.to(device)
             n = x.shape[1]
             perms = torch.stack([torch.randperm(n, device=device) for _ in range(no_permutations)])
+            #keys = torch.randn(no_permutations, n, device=device)
+            #perms = keys.argsort(dim=-1) 
         else:
             xc, yc, xt, yt = data.xc, data.yc, data.xt, data.yt
             xc, yc, xt, yt = xc.to(device), yc.to(device), xt.to(device), yt.to(device)
@@ -115,6 +119,8 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
             n = nc + nt
                 
             perms = torch.stack([torch.randperm(nc, device=device) for _ in range(no_permutations)])
+            #keys = torch.randn(no_permutations, nc, device=device)
+            #perms = keys.argsort(dim=-1) 
         mods_out_mvar = []
         mods_out_mnll = []
         # Computes m_var for each model
@@ -196,29 +202,34 @@ if __name__ == "__main__":
     nc, nt = 32, 128
     batch_size = 16
     context_range = [[-2.0, 2.0]]
-    target_range = [[-4.0, 4.0]]
+    target_range = [[-2.0, 2.0]]
     samples_per_epoch = 16_000
-    batch_size = 16
+    batch_size = 1024
     deterministic = True
     gen_val = RandomScaleGPGenerator(dim=1, min_nc=nc, max_nc=nc, min_nt=nt, max_nt=nt, batch_size=batch_size,
         context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=0.1,
         deterministic=True, kernel=kernels)
     models = []
-    use_weights = False # Defines if local checkpoints are to be used
-    if use_weights:
-        # Example usage - ammend with specific model paths and data etc
-        model_paths = ["/scratch/pm846/TNP/checkpoints/epoch=499-step=500000.ckpt"]
-        # Loads models
-        for model_name in model_paths:
-            # Takes in local cptk file path but will probably want to expand to support weights and biases model
-            mod = LitWrapper.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
-                    model_name, model=model_arch
-                )
-            mod = mod.model
-            mod.eval()
-            models.append(mod)
+    useWandb = True # Defines if weights and biases model is to be used
+    wanddName = 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200'
+    #wanddName = 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v0'
+    if useWandb:
+        artifact = wandb.Api().artifact(wanddName, type='model')
+        artifact_dir = artifact.download()
+        ckpt_file = os.path.join(artifact_dir, "model.ckpt")
+        print(ckpt_file)
+        lit_model = (
+            LitWrapper.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
+                ckpt_file, model=model_arch,
+            )
+        )
+        tnp_model = lit_model.model
+        tnp_model.eval()
+        models.append(tnp_model)
     else:
         model_arch.to('cuda')
         model_arch.eval()
-        models.append(model_arch)
+        tnp_model=model_arch
+        models.append(tnp_model)
+
     exchangeability_test(models, gen_val, no_permutations=20, device='cuda', use_autoreg_eq=False, max_samples = 100, seq_len = nc+nt, batch_size=16)

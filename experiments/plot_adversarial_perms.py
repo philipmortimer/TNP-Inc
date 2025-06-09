@@ -378,7 +378,6 @@ if __name__ == "__main__":
     wanddName = 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200'
     wanddName = 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v0'
     if useWandb:
-        #run = wandb.login()
         artifact = wandb.Api().artifact(wanddName, type='model')
         artifact_dir = artifact.download()
         ckpt_file = os.path.join(artifact_dir, "model.ckpt")
