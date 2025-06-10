@@ -28,33 +28,24 @@ class ARTNPEncoder(nn.module):
             warnings.warn("Perceiver Encoder and IST Encoder not currently supported for autoreg TNP encoder as cant do masking.")
 
     @check_shapes(
-        "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]?", "return: [m, n, dz]"
+        "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]", "return: [m, n, dz]"
     )
     def forward(
         self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        
+        # During training we use teacher forcing and have access to yt (train mode).
+        # During evaluation (eval mode) yt is not provided and will be none.
+        if yt is None:
+            print("IMPLEMENT ME") # TODO add
+        else:
+            x_y_ctx = torch.cat((xc, batch.yc), dim=-1)
+            x_0_tar = torch.cat((xt, torch.zeros_like(batch.yt)), dim=-1)
 
-        x = torch.cat((xc, xt), dim=1)
-        x_encoded = self.x_encoder(x)
-        xc_encoded, xt_encoded = x_encoded.split((xc.shape[1], xt.shape[1]), dim=1)
+           # TODO Implement
 
-        y = torch.cat((yc, yt), dim=1)
-        y_encoded = self.y_encoder(y)
-        yc_encoded, yt_encoded = y_encoded.split((yc.shape[1], yt.shape[1]), dim=1)
-
-        zc = torch.cat((xc_encoded, yc_encoded), dim=-1)
-        zt0 = torch.cat((xt_encoded, yt_encoded), dim=-1)
-        zc = self.xy_encoder(zc)
-        zt0 = self.xy_encoder(zt0)
-
-        # Constructs mask so that target points attend to all previous targets and the whole context set
-
-        
-        zt = self.transformer_encoder(zc, zt0, mask=ar_mask)
         return zt
 
-class TNP_AR(ConditionalNeuralProcess):
+class TNP_AR(ARConditionalNeuralProcess):
     def __init__(
         self,
         encoder: ARTNPEncoder,

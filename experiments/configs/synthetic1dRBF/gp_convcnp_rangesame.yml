@@ -112,11 +112,13 @@ optimiser:
 params:
   # Model + Training Params
   epochs: 200
-  embed_dim: 128
-  num_heads: 8
-  head_dim: 16
-  norm_first: True
-  num_layers: 5
+  num_channels: 32
+  num_blocks: 5
+  kernel_size: 9
+  num_decoder_kernels: 5
+  grid_range: ${params.target_range}
+  grid_shape: [128,]
+  init_lengthscale: 0.1
 
   # Synthetic 1D GP Params
   dim_x: 1
