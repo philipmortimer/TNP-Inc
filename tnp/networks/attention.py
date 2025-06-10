@@ -62,7 +62,9 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         )
 
         if mask is not None:
-            mask = einops.repeat(mask, "m n1 n2 -> m h n1 n2", h=self.num_heads)
+            # Shape goes from [m, nq, nkv] -> [m, h, nq, nkv] by only changing view (no new memory allocated)
+            # Code used mask = einops.repeat(mask, "m n1 n2 -> m h n1 n2", h=self.num_heads) previously. More readable but uses more memory.
+            mask = mask.unsqueeze(1).expand(-1, self.num_heads, -1, -1)
 
         if self.linear:
             out = linear_attention(q, k, v, attn_mask=mask, scale=self.scale)
