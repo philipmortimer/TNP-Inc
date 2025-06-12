@@ -57,6 +57,11 @@ class ARConditionalNeuralProcess(BaseNeuralProcess):
         xt: torch.Tensor,
         yt: torch.Tensor,
     ) -> torch.distributions.Distribution:
+        out_tmp = self.predict(xc, yc, xt, num_samples=3)
+        print("Done")
+        exit(0)
+
+        return out_tmp
         if self.training:
             # Train in AR mode.
             return self.likelihood(self.decoder(self.encoder(xc, yc, xt, yt), xt))

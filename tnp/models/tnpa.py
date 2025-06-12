@@ -96,14 +96,13 @@ class TNPA(ARConditionalNeuralProcess):
     ):
         super().__init__(encoder, decoder, likelihood)
 
-
         self.permute= permute
 
 
     @check_shapes(
     "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]"
     )  
-    def predict(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, num_samples=50):
+    def predict(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, num_samples=50) -> td.Normal:
         batch_size = xc.shape[0]
         num_target = xt.shape[1]
         
@@ -126,23 +125,24 @@ class TNPA(ARConditionalNeuralProcess):
         batch_yt = squeeze(yt_stacked)
 
         for step in range(xt.shape[1]):
-            z_target_stacked = self.encoder(batch_xc, batch_yc, batch_xt, batch_yt, bound_std) # [m * num_samples, nt, dz]
+            z_target_stacked = self.encoder(batch_xc, batch_yc, batch_xt, batch_yt) # [m * num_samples, nt, dz]
             z_target_stacked = z_target_stacked[..., -xt.shape[-2] :, :] # [m * num_samples, nt, dz] - appears to do nothing
             out = self.decoder(z_target_stacked) # [m * num_samples, nt, 2 * dy]
+            out = self.likelihood(out)
 
-            if self.permute and False:
-                # TODO Implement this as currently it goes from [m * num_samples, nt, 2 * dy] to [num_samples, m, nt]
-                out = out[dim_sample, dim_batch, deperm_ids]
-            dist = self.likelihood(out)
+            assert isinstance(out, td.Normal), "TNPAR must predict a Gaussian"
+            mean, std = out.mean, out.stddev
+            mean, std = unsqueeze(mean), unsqueeze(std)
+            batch_yt = unsqueeze(batch_yt)
+            batch_yt[:, :, step] = td.Normal(mean[:, :, step], std[:, :, step]).sample()
+            batch_yt = squeeze(batch_yt)
 
             # Note currently no support for bound_std but may want to consider in future
-            sample = dist.sample() # [m * num_samples, nt, dy]
-            batch_yt[:, step, :] = sample[:, step, :]
 
-        if self.permute and False: #TODO implement
+        if self.permute:
             mean, std = mean[dim_sample, dim_batch, deperm_ids], std[dim_sample, dim_batch, deperm_ids]
 
-        return dist
+        return td.Normal(mean, std)
 
     def _stack_tnpapaper(self, x, num_samples=None, dim=0):
         return x if num_samples is None \
