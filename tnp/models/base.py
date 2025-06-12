@@ -62,4 +62,6 @@ class ARConditionalNeuralProcess(BaseNeuralProcess):
             return self.likelihood(self.decoder(self.encoder(xc, yc, xt, yt), xt))
 
         # Test in normal mode.
+        dist_tmp = self.likelihood(self.decoder(self.encoder(xc, yc, xt, yt), xt)) # Delete later - for testing
+        return dist_tmp
         return self.likelihood(self.decoder(self.encoder(xc, yc, xt), xt))

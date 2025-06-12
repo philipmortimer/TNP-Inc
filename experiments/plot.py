@@ -51,6 +51,7 @@ def plot(
 
         plot_batch = copy.deepcopy(batch)
         plot_batch.xt = x_plot
+        return
 
         with torch.no_grad():
             y_plot_pred_dist = pred_fn(model, plot_batch)

@@ -6,11 +6,15 @@ from typing import Optional, Union
 import torch
 from check_shapes import check_shapes
 from torch import nn
+import torch.distributions as td
 
 from .tnp import TNPDecoder
 from ..utils.helpers import preprocess_observations
 from ..networks.transformer import TransformerEncoder
 from .base import ARConditionalNeuralProcess
+
+from ..likelihoods.gaussian import HeteroscedasticNormalLikelihood
+
 
 
 class ARTNPEncoder(nn.Module):
@@ -27,13 +31,12 @@ class ARTNPEncoder(nn.Module):
         self.xy_encoder = xy_encoder
         self.x_encoder = x_encoder
         self.y_encoder = y_encoder
-        self.bound_std = bound_std
 
     @check_shapes(
         "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]", "return: [m, n, dz]"
     )
     def forward(
-        self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, bound_std: bool
+        self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor
     ) -> torch.Tensor:
         m = xc.shape[0]
         # Preprocesses observations
@@ -50,7 +53,7 @@ class ARTNPEncoder(nn.Module):
         yc_encoded, yt_encoded = y_encoded.split((yc.shape[1], yt.shape[1]), dim=1)
         
         # Concats ctx with fake and real target points
-        inp = self._construct_input(xc_encoded, yc_encoded, xt_encoded, yt_encoded, bound_std)
+        inp = self._construct_input(xc_encoded, yc_encoded, xt_encoded, yt_encoded)
         mask, num_tar = self._create_mask(num_ctx=xc.shape[1], num_tar=xt.shape[1], device=xt.device)
         mask = mask.unsqueeze(0).expand(m, -1, -1) # [m, nc + 2*nt, nc+2*nt]  Broadcast mask to batch
 
@@ -61,14 +64,16 @@ class ARTNPEncoder(nn.Module):
         return out[:, -num_tar:]
 
 
-    def _construct_input(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, bound_std: bool):
+    def _construct_input(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor):
         x_y_ctx = torch.cat((xc, yc), dim=-1)
         x_0_tar = torch.cat((xt, torch.zeros_like(yt)), dim=-1)
-        if self.training and bound_std:
-            yt_noise = yt + 0.05 * torch.randn_like(yt) # add noise to the past to smooth the model
-            x_y_tar = torch.cat((xt, yt_noise), dim=-1)
-        else:
-            x_y_tar = torch.cat((xt, yt), dim=-1)
+
+        x_y_tar = torch.cat((xt, yt), dim=-1) #  Note currently no support for bound_std but may want to add (think this is handled by the lilkelihood dist)
+        #if self.training and bound_std:
+        #    yt_noise = yt + 0.05 * torch.randn_like(yt) # add noise to the past to smooth the model
+        #    x_y_tar = torch.cat((xt, yt_noise), dim=-1)
+        #else:
+        #    x_y_tar = torch.cat((xt, yt), dim=-1)
         inp = torch.cat((x_y_ctx, x_y_tar, x_0_tar), dim=1) # [m, nc + 2*nt, dx + dy + 1] (probably - depends on encoders etc)
         return inp
 
@@ -86,6 +91,68 @@ class TNPA(ARConditionalNeuralProcess):
         self,
         encoder: ARTNPEncoder,
         decoder: TNPDecoder,
-        likelihood: nn.Module,
+        likelihood: Union[HeteroscedasticNormalLikelihood],
+        permute: bool = True
     ):
         super().__init__(encoder, decoder, likelihood)
+
+
+        self.permute= permute
+
+
+    @check_shapes(
+    "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]"
+    )  
+    def predict(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, num_samples=50):
+        batch_size = xc.shape[0]
+        num_target = xt.shape[1]
+        
+        def squeeze(x):
+            return x.view(-1, x.shape[-2], x.shape[-1])
+        def unsqueeze(x):
+            return x.view(num_samples, batch_size, x.shape[-2], x.shape[-1])
+
+        xc_stacked = self._stack_tnpapaper(xc, num_samples)
+        yc_stacked = self._stack_tnpapaper(yc, num_samples)
+        xt_stacked = self._stack_tnpapaper(xt, num_samples)
+        yt_pred = torch.zeros((batch_size, num_target, yc.shape[2]), device=xt.device)
+        yt_stacked = self._stack_tnpapaper(yt_pred, num_samples)
+        if self.permute:
+            xt_stacked, yt_stacked, dim_sample, dim_batch, deperm_ids = self._permute_sample_batch(xt_stacked, yt_stacked, num_samples, batch_size, num_target)
+
+        batch_xc = squeeze(xc_stacked) # [m * num_samples, nc, dx]
+        batch_yc = squeeze(yc_stacked)
+        batch_xt = squeeze(xt_stacked)
+        batch_yt = squeeze(yt_stacked)
+
+        for step in range(xt.shape[1]):
+            z_target_stacked = self.encoder(batch_xc, batch_yc, batch_xt, batch_yt, bound_std) # [m * num_samples, nt, dz]
+            z_target_stacked = z_target_stacked[..., -xt.shape[-2] :, :] # [m * num_samples, nt, dz] - appears to do nothing
+            out = self.decoder(z_target_stacked) # [m * num_samples, nt, 2 * dy]
+
+            if self.permute and False:
+                # TODO Implement this as currently it goes from [m * num_samples, nt, 2 * dy] to [num_samples, m, nt]
+                out = out[dim_sample, dim_batch, deperm_ids]
+            dist = self.likelihood(out)
+
+            # Note currently no support for bound_std but may want to consider in future
+            sample = dist.sample() # [m * num_samples, nt, dy]
+            batch_yt[:, step, :] = sample[:, step, :]
+
+        if self.permute and False: #TODO implement
+            mean, std = mean[dim_sample, dim_batch, deperm_ids], std[dim_sample, dim_batch, deperm_ids]
+
+        return dist
+
+    def _stack_tnpapaper(self, x, num_samples=None, dim=0):
+        return x if num_samples is None \
+                else torch.stack([x]*num_samples, dim=dim)
+
+    def _permute_sample_batch(self, xt, yt, num_samples, batch_size, num_target):
+        # data in each batch is permuted identically
+        perm_ids = torch.rand(num_samples, num_target, device=xt.device).unsqueeze(1).repeat((1, batch_size, 1))
+        perm_ids = torch.argsort(perm_ids, dim=-1)
+        deperm_ids = torch.argsort(perm_ids, dim=-1)
+        dim_sample = torch.arange(num_samples, device=xt.device).unsqueeze(-1).unsqueeze(-1).repeat((1,batch_size,num_target))
+        dim_batch = torch.arange(batch_size, device=xt.device).unsqueeze(0).unsqueeze(-1).repeat((num_samples,1,num_target))
+        return xt[dim_sample, dim_batch, perm_ids], yt[dim_sample, dim_batch, perm_ids], dim_sample, dim_batch, deperm_ids

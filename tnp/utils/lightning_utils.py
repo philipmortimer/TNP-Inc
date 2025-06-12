@@ -100,9 +100,11 @@ class LitWrapper(pl.LightningModule):
             return
 
         if self.plot_fn is not None and self.current_epoch % self.plot_interval == 0:
+            print("pre plot")
             self.plot_fn(
                 self.model, self.val_batches, f"epoch-{self.current_epoch:04d}"
             )
+            print("losing the plot?")
 
         self.val_batches = []
 
