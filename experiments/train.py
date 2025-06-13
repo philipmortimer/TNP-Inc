@@ -4,6 +4,7 @@ import lightning.pytorch as pl
 import torch
 from omegaconf import OmegaConf
 from plot import plot
+import numpy as np
 
 import wandb
 from tnp.utils.data_loading import adjust_num_batches
@@ -54,12 +55,15 @@ def main():
     )
 
     def plot_fn(model, batches, name):
+        # Calculates plot range
+        min_tgt, max_tgt = np.array(experiment.params.target_range).min(), np.array(experiment.params.target_range).max()
         plot(
             model=model,
             batches=batches,
             num_fig=min(5, len(batches)),
             name=name,
             pred_fn=experiment.misc.pred_fn,
+            x_range = (min_tgt, max_tgt)
         )
 
     if experiment.misc.resume_from_checkpoint is not None:

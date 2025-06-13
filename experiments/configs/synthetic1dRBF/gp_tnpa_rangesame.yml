@@ -56,6 +56,7 @@ model:
   encoder: ${tnp_encoder}
   decoder: ${tnp_decoder}
   likelihood: ${likelihood}
+  no_samples_rollout_pred: ${params.num_samples_pred}
 
 tnp_encoder:
   _target_: tnp.models.tnpa.ARTNPEncoder
@@ -109,6 +110,9 @@ params:
   head_dim: 16
   norm_first: True
   num_layers: 5
+
+  # Samples to be used when using monte carlo prediction (ie unrolling loop without teacher forcing for tnpa)
+  num_samples_pred: 13
 
   # Synthetic 1D GP Params
   dim_x: 1

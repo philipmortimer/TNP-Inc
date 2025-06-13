@@ -6,6 +6,7 @@ from ..models.base import (
     ARConditionalNeuralProcess,
     ConditionalNeuralProcess,
     LatentNeuralProcess,
+    ARTNPNeuralProcess,
 )
 from ..models.convcnp import GriddedConvCNP
 
@@ -14,6 +15,7 @@ def np_pred_fn(
     model: nn.Module,
     batch: Batch,
     num_samples: int = 1,
+    predict_without_yt_tnpa: bool = False, # Used for tnpa to allow teacher forcing by default but support predictions without access to yt
 ) -> torch.distributions.Distribution:
     if isinstance(model, GriddedConvCNP):
         assert isinstance(batch, ImageBatch)
@@ -26,6 +28,8 @@ def np_pred_fn(
         )
     elif isinstance(model, ARConditionalNeuralProcess):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
+    elif isinstance(model, ARTNPNeuralProcess):
+        pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt, predict_without_yt_tnpa=predict_without_yt_tnpa)
     else:
         raise ValueError
 

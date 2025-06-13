@@ -57,16 +57,32 @@ class ARConditionalNeuralProcess(BaseNeuralProcess):
         xt: torch.Tensor,
         yt: torch.Tensor,
     ) -> torch.distributions.Distribution:
-        out_tmp = self.predict(xc, yc, xt, num_samples=3)
-        print("Done")
-        exit(0)
-
-        return out_tmp
         if self.training:
             # Train in AR mode.
             return self.likelihood(self.decoder(self.encoder(xc, yc, xt, yt), xt))
 
         # Test in normal mode.
-        dist_tmp = self.likelihood(self.decoder(self.encoder(xc, yc, xt, yt), xt)) # Delete later - for testing
-        return dist_tmp
         return self.likelihood(self.decoder(self.encoder(xc, yc, xt), xt))
+
+# Used specifically for tnpa only at the moment
+class ARTNPNeuralProcess(BaseNeuralProcess):
+    @check_shapes(
+        "xc: [m, nc, dx]",
+        "yc: [m, nc, dy]",
+        "xt: [m, nt, dx]",
+        "yt: [m, nt_, dy]",
+    )
+    def forward(
+        self,
+        xc: torch.Tensor,
+        yc: torch.Tensor,
+        xt: torch.Tensor,
+        yt: torch.Tensor,
+        predict_without_yt_tnpa: bool,
+    ) -> torch.distributions.Distribution:
+        if predict_without_yt_tnpa:
+            # Uses a monte carlo sampled distribution (unrolling over multiple samples)
+            return self.predictive_distribution_monte_carlo(xc, yc, xt)
+        else:
+            # Uses teach forcing setup
+            return self.likelihood(self.decoder(self.encoder(xc, yc, xt, yt), xt))

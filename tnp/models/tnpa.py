@@ -11,7 +11,7 @@ import torch.distributions as td
 from .tnp import TNPDecoder
 from ..utils.helpers import preprocess_observations
 from ..networks.transformer import TransformerEncoder
-from .base import ARConditionalNeuralProcess
+from .base import ARTNPNeuralProcess
 
 from ..likelihoods.gaussian import HeteroscedasticNormalLikelihood
 
@@ -86,23 +86,25 @@ class ARTNPEncoder(nn.Module):
 
         return mask, num_tar
 
-class TNPA(ARConditionalNeuralProcess):
+class TNPA(ARTNPNeuralProcess):
     def __init__(
         self,
         encoder: ARTNPEncoder,
         decoder: TNPDecoder,
         likelihood: Union[HeteroscedasticNormalLikelihood],
-        permute: bool = True
+        permute: bool = True,
+        no_samples_rollout_pred: int = 50 # The number of samples to be used when doing predictive rollout. Note could change on fly if wanted
     ):
         super().__init__(encoder, decoder, likelihood)
 
         self.permute= permute
+        self.num_samples = no_samples_rollout_pred
 
 
     @check_shapes(
     "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]"
     )  
-    def predict(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, num_samples=50) -> td.Normal:
+    def _predict(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, num_samples=50) -> td.Normal:
         batch_size = xc.shape[0]
         num_target = xt.shape[1]
         
@@ -143,6 +145,25 @@ class TNPA(ARConditionalNeuralProcess):
             mean, std = mean[dim_sample, dim_batch, deperm_ids], std[dim_sample, dim_batch, deperm_ids]
 
         return td.Normal(mean, std)
+
+    # Unrolls monte carlo estimate of a predictive distribution into a mixture. Can use this to access mean and std dev e.g. for plotting
+    @check_shapes(
+    "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]"
+    )  
+    def predictive_distribution_monte_carlo(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor) -> td.MixtureSameFamily:
+        dist = self._predict(xc, yc, xt, self.num_samples)
+        mean, std = dist.mean, dist.stddev # mean and std both have shape [s, m, nt, dy] where m = 1 probably
+        s, m, nt, dy = mean.shape
+        # Reorders to [m, nt, s, dy] - needed for mixture
+        mean = mean.permute(1,2,0,3)
+        std  = std .permute(1,2,0,3)
+        
+        mix  = td.Categorical(torch.ones(m, nt, s, device=xt.device) / s)
+        comp = td.Independent(td.Normal(mean, std), 1)
+        approx_dist = td.MixtureSameFamily(mix, comp)
+        return approx_dist
+        
+        
 
     def _stack_tnpapaper(self, x, num_samples=None, dim=0):
         return x if num_samples is None \

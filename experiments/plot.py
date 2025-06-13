@@ -51,10 +51,9 @@ def plot(
 
         plot_batch = copy.deepcopy(batch)
         plot_batch.xt = x_plot
-        return
 
         with torch.no_grad():
-            y_plot_pred_dist = pred_fn(model, plot_batch)
+            y_plot_pred_dist = pred_fn(model, plot_batch, predict_without_yt_tnpa=True)
             yt_pred_dist = pred_fn(model, batch)
 
         model_nll = -yt_pred_dist.log_prob(yt).sum() / batch.yt[..., 0].numel()
