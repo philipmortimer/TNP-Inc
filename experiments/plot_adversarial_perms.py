@@ -213,7 +213,7 @@ def plot_perm(
     plt.legend(fontsize=20)
     plt.tight_layout()
 
-    fname = f"{file_name}.pdf"
+    fname = f"{file_name}.png"
     if wandb.run is not None and logging:
         wandb.log({fname: wandb.Image(fig)})
     elif savefig:
@@ -223,17 +223,8 @@ def plot_perm(
 
     plt.close()
 
-
-def plot_parallel_coordinates_bezier(
-    perms: torch.Tensor,
-    log_p: torch.Tensor,
-    xc: torch.Tensor,
-    xt: torch.Tensor,
-    file_name: str,
-    max_perms_plot: int = 20,
-    curvature_strength: float = 0.2,
-    plot_targets: bool = False,
-):
+# Gets a subset of perms and log_p evenly spaced across all sampled perms
+def get_spaced_examples( perms: torch.Tensor, log_p: torch.Tensor, max_perms_plot: int = 20) -> (torch.Tensor, torch.Tensor):
     K, nc = perms.shape
     # Selects subset of lines if required
     if K > max_perms_plot:
@@ -241,7 +232,30 @@ def plot_parallel_coordinates_bezier(
         #indices_plot = torch.randperm(K)[:max_perms_plot] # Random selection of lines
         # Select the evenly spaced permutations and their log probabilities
         perms = perms[indices_plot]
-        log_p = log_p[indices_plot]
+        log_p = log_p[indices_plot]  
+    return (perms, log_p) 
+
+# Gets the best and worst perms only to plot
+def get_best_and_worst( perms: torch.Tensor, log_p: torch.Tensor, top_and_bottom_n: int = 2) -> (torch.Tensor, torch.Tensor):
+    K, nc = perms.shape
+    if K < top_and_bottom_n * 2:# Too few perms
+        return (perms, log_p)
+    log_p_new =  torch.cat((log_p[:top_and_bottom_n], log_p[-top_and_bottom_n:]))
+    perms_new =  torch.cat((perms[:top_and_bottom_n,:], perms[-top_and_bottom_n:,:]))
+    return (perms_new, log_p_new) 
+
+
+def plot_parallel_coordinates_bezier(
+    perms: torch.Tensor,
+    log_p: torch.Tensor,
+    xc: torch.Tensor,
+    xt: torch.Tensor,
+    file_name: str,
+    curvature_strength: float = 0.2,
+    alpha_line: float = 0.4,
+    plot_targets: bool = False,
+):
+    K, nc = perms.shape
 
     # Convert to cpu
     perms = perms.cpu()
@@ -286,7 +300,7 @@ def plot_parallel_coordinates_bezier(
             facecolor='none', 
             edgecolor=line_color, 
             linewidth=1.0,
-            alpha=0.4 
+            alpha=alpha_line
         )
         ax.add_patch(patch)
 
@@ -324,7 +338,7 @@ def plot_parallel_coordinates_bezier(
     ax.set_ylim(x_min, x_max)
     if plot_targets: ax.legend()
 
-    fname = f"{file_name}.pdf"
+    fname = f"{file_name}.png"
     plt.savefig(fname, bbox_inches="tight", dpi=300)
 
     plt.close()
@@ -347,14 +361,14 @@ def plot_log_p_bins(log_p, file_name, nc, nt, plain_tnp_perf=None):
     ax.grid(True, which="both", linestyle="--", linewidth=0.5)
     ax.legend(frameon=False, fontsize=10, loc="best")
     plt.tight_layout()
-    plt.savefig(file_name + "_withoutbasetnp.pdf", bbox_inches="tight", dpi=300)
+    plt.savefig(file_name + "_withoutbasetnp.png", bbox_inches="tight", dpi=300)
     # Adds red line to show the performance of a plain tnp model if it is given
     if plain_tnp_perf is not None:
         ax.axvline(plain_tnp_perf, color="red", linestyle="--", linewidth=2.5, 
             label=fr"TNP-D ($\ell={{{plain_tnp_perf:.2f}}}$)")
         ax.legend(frameon=False, fontsize=10, loc="best")
         plt.tight_layout()
-        plt.savefig(file_name + "_withbasetnp.pdf", bbox_inches="tight", dpi=300)
+        plt.savefig(file_name + "_withbasetnp.png", bbox_inches="tight", dpi=300)
     plt.close()
 
 
@@ -384,8 +398,12 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     # Parralel coordinates plot to see permutations ordering
     file_name = f"{folder_path}/parr_cord_id_{file_id}"
     plot_targets = xt.shape[1] <= 5 # Plot targets if there are not too many of them
-    plot_parallel_coordinates_bezier(perms=perms,log_p=log_p, xc=xc, xt=xt, file_name=file_name, plot_targets=plot_targets,
-        max_perms_plot=20)
+    perms_spaced, log_p_spaced = get_spaced_examples(perms=perms, log_p=log_p, max_perms_plot=20)
+    perms_extreme, log_p_extreme = get_best_and_worst(perms=perms, log_p=log_p, top_and_bottom_n=2)
+    plot_parallel_coordinates_bezier(perms=perms_spaced,log_p=log_p_spaced, xc=xc, xt=xt, 
+        file_name=file_name+"_spaced", plot_targets=plot_targets, alpha_line=0.4)
+    plot_parallel_coordinates_bezier(perms=perms_extreme,log_p=log_p_extreme, xc=xc, xt=xt, 
+        file_name=file_name+"_extreme", plot_targets=plot_targets, alpha_line=0.9)
 
     # Bins log probabilities to show variation in log probability with differing permutations
     plain_tnp_mean = None
@@ -439,7 +457,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 32, 64
+    nc, nt = 10, 32
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
@@ -465,8 +483,8 @@ if __name__ == "__main__":
     yc = torch.gather(yc, dim=1, index=indices)
     print("Starting search")
     perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(masked_model, xc, yc, data.xt, data.yt, 
-        no_permutations=10_000_000, device='cuda', batch_size=2048)
+        no_permutations=1_00_000, device='cuda', batch_size=2048)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
     visualise_perms(masked_model, perms, log_p, xc, yc, data.xt, data.yt,
-        folder_path="plot_results/adversarial", file_id=str(random.randint(0, 1000000)), gt_pred=data.gt_pred, 
+        folder_path="experiments/plot_results/adversarial", file_id=str(random.randint(0, 1000000)), gt_pred=data.gt_pred, 
         plain_tnp_model=plain_model)
