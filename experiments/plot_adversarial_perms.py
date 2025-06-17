@@ -20,7 +20,7 @@ import os
 import wandb
 from tnp.data.base import Batch, GroundTruthPredictor
 from tnp.data.synthetic import SyntheticBatch
-from tnp.utils.np_functions import np_pred_fn
+from tnp.utils.np_functions import np_pred_fn, np_loss_fn
 from typing import Callable, List, Tuple, Union, Optional
 from torch import nn
 import copy
@@ -70,7 +70,13 @@ def gather_rand_perms(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.T
 
         data_time += time.time() - data_start_time
         inf_start_time = time.time()
-        log_p = tnp_model(xc_perm_batched, yc_perm_batched, xt_batched).log_prob(yt_batched).sum(dim=(-1, -2))
+        nt, dy = yt_batched.shape[-2:]
+        log_p = tnp_model(xc_perm_batched, yc_perm_batched, xt_batched).log_prob(yt_batched).sum(dim=(-1, -2)) / (nt * dy)
+
+        #batch = SyntheticBatch(xc=xc_perm_batched, yc=yc_perm_batched, xt=xt_batched, yt=yt_batched, 
+        #    x=torch.cat([xc_perm_batched, xt_batched], dim=1), y=torch.cat([yc_perm_batched, yt_batched], dim=1))
+        #yt_pred_dist = np_pred_fn(tnp_model, batch)
+        #log_p = -np_loss_fn(tnp_model, batch)
         inf_time += time.time() - inf_start_time
 
         log_p_list.append(log_p)
@@ -408,7 +414,9 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     # Bins log probabilities to show variation in log probability with differing permutations
     plain_tnp_mean = None
     if plain_tnp_model is not None: 
-        plain_tnp_mean = plain_tnp_model(xc, yc, xt).log_prob(yt).sum(dim=(-1, -2)).item()
+        batch = SyntheticBatch(xc=xc, yc=yc, xt=xt, yt=yt, x=torch.cat([xc, xt], dim=1), y=torch.cat([yc, yt], dim=1))
+        nt, dy = yt.shape[-2:]
+        plain_tnp_mean = (plain_tnp_model(xc, yc, xt).log_prob(yt).sum(dim=(-1, -2)) / (nt * dy)).item()
     plot_log_p_bins(log_p.cpu(), f"{folder_path}/bins_dist_id_{file_id}", xc.shape[1], xt.shape[1], plain_tnp_mean)
 
 def get_model(config_path, weights_and_bias_ref, device='cuda'):
