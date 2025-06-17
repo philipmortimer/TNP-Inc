@@ -465,7 +465,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 9, 32
+    nc, nt = 12, 128
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
@@ -494,5 +494,5 @@ if __name__ == "__main__":
         no_permutations=10_000_000, device='cuda', batch_size=2048)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
     visualise_perms(masked_model, perms, log_p, xc, yc, data.xt, data.yt,
-        folder_path="experiments/plot_results/adversarial", file_id=str(random.randint(0, 1000000)), gt_pred=data.gt_pred, 
+        folder_path="experiments/plot_results/adversarial", file_id="1", gt_pred=data.gt_pred, 
         plain_tnp_model=plain_model)
