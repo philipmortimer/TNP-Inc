@@ -89,6 +89,7 @@ def m_var_autoreg(tnp_model, x: torch.Tensor, y: torch.Tensor, perms: torch.Tens
 # Samples variance over trained models with different seeds
 def exchange(models_with_different_seeds, data_loader, no_permutations, device, use_autoreg_eq, max_samples, seq_len):
     no_models = len(models_with_different_seeds)
+    # Note - may want to consider diving by nt in future? (or even nt * dy)
 
     m_vars = []
     m_nlls = []
