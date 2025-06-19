@@ -3,7 +3,7 @@ generators:
     _target_: tnp.data.gp.RandomScaleGPGenerator
     dim: ${params.dim_x}
     kernel:
-      - ${periodic_kernel}
+      - ${gibbs_kernel}
     noise_std: 0.1
     min_nc: 1
     max_nc: 64
@@ -17,7 +17,7 @@ generators:
     _target_: tnp.data.gp.RandomScaleGPGenerator
     dim: ${params.dim_x}
     kernel:
-      - ${periodic_kernel}
+      - ${gibbs_kernel}
     noise_std: 0.1
     min_nc: 1
     max_nc: 64
@@ -32,7 +32,7 @@ generators:
     _target_: tnp.data.gp.RandomScaleGPGenerator
     dim: ${params.dim_x}
     kernel:
-      - ${periodic_kernel}
+      - ${gibbs_kernel}
     noise_std: 0.1
     min_nc: 1
     max_nc: 64
@@ -44,29 +44,28 @@ generators:
     batch_size: 16
     deterministic: True
 
-periodic_kernel:
-  _target_: tnp.networks.gp.PeriodicKernel
+gibbs_kernel:
+  _target_: tnp.networks.gp.RandomGibbsKernel
   _partial_: True
   ard_num_dims: ${params.dim_x}
   min_log10_lengthscale: ${params.min_log10_lengthscale}
   max_log10_lengthscale: ${params.max_log10_lengthscale}
-  min_log10_period: ${params.min_log10_period}
-  max_log10_period: ${params.max_log10_period}
-
+  changepoints: ${params.changepoints}
+  directions: ${params.directions}
 
 model:
-  _target_: tnp.models.castnp.TNPCausal
+  _target_: tnp.models.tnp.TNP
   encoder: ${tnp_encoder}
   decoder: ${tnp_decoder}
   likelihood: ${likelihood}
 
 tnp_encoder:
-  _target_: tnp.models.castnp.TNPEncoderMasked
+  _target_: tnp.models.tnp.TNPEncoder
   transformer_encoder: ${transformer_encoder}
   xy_encoder: ${xy_encoder}
 
 transformer_encoder:
-  _target_: tnp.networks.transformer.TNPTransformerMaskedEncoder
+  _target_: tnp.networks.transformer.TNPTransformerEncoder
   mhsa_layer: ${mhsa_layer}
   mhca_layer: ${mhca_layer}
   num_layers: ${params.num_layers}
@@ -129,13 +128,13 @@ params:
   target_range: [[-2.0, 2.0]]
   min_log10_lengthscale: -0.602
   max_log10_lengthscale: 0.0
-  min_log10_period: 0.301
-  max_log10_period: 0.301
+  changepoints: [-1.5, -0.5, 0.5, 1.5]
+  directions: [true, false]
 
 
 misc:
-  project: mask-tnp-periodic-rangesame
-  name: mask-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
+  project: plain-tnp-gibbs-rangesame
+  name: plain-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
   resume_from_checkpoint: null
   gradient_clip_val: 0.5
   plot_interval: 10

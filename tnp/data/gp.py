@@ -83,6 +83,7 @@ class GPGroundTruthPredictor(GroundTruthPredictor):
                 train_inputs=xc_,
                 train_targets=yc_[..., 0],
             )
+            gp_model = gp_model.to(xc_.device)
             gp_model.eval()
             gp_model.likelihood.eval()
             with torch.no_grad():
