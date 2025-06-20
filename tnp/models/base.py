@@ -86,3 +86,23 @@ class ARTNPNeuralProcess(BaseNeuralProcess):
         else:
             # Uses teach forcing setup
             return self.likelihood(self.decoder(self.encoder(xc, yc, xt, yt), xt))
+
+# Used for the batched causal TNP
+class BatchedCausalTNP(BaseNeuralProcess):
+    @check_shapes(
+        "xc: [m, nc, dx]",
+        "yc: [m, nc, dy]",
+        "xt: [m, nt, dx]",
+        "yt: [m, nt, dy]",
+    )
+    def forward(
+        self,
+        xc: torch.Tensor,
+        yc: torch.Tensor,
+        xt: torch.Tensor,
+        yt: torch.Tensor,
+    ) -> torch.distributions.Distribution:
+        if self.training:
+            # 
+            return self.likelihood(self.decoder(self.encoder(xc, yc, xt, yt), xt))
+        else:
