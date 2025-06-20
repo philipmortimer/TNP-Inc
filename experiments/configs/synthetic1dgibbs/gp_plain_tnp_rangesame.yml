@@ -134,7 +134,7 @@ params:
 
 misc:
   project: plain-tnp-gibbs-rangesame
-  name: plain-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
+  name: plain-TNP-CPS-${eval:"len(${params.changepoints})"}-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
   resume_from_checkpoint: null
   gradient_clip_val: 0.5
   plot_interval: 10

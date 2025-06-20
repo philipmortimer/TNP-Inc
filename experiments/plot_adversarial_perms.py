@@ -32,6 +32,7 @@ import torch
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from tnp.utils.experiment_utils import deep_convert_dict, extract_config
+import matplotlib.patheffects as pe
 
 
 matplotlib.rcParams["mathtext.fontset"] = "stix"
@@ -102,7 +103,7 @@ def plot_perm(
     annotate: bool = True, # Number the points or not
     figsize: Tuple[float, float] = (8.0, 6.0),
     x_range: Tuple[float, float] = (-2.0, 2.0),
-    y_lim: Tuple[float, float] = (-3.0, 3.0),
+    y_lim: Tuple[float, float] = (-2.0, 2.0),
     points_per_dim: int = 64,
     savefig: bool = True,
     logging: bool = True,
@@ -140,7 +141,7 @@ def plot_perm(
     # Labels context set ordering
     if annotate:
         for j, (xj, yj) in enumerate(zip(x_ctx, y_ctx), 1):
-            plt.annotate(str(j), (xj, yj), textcoords="offset points", xytext=(5, 5), fontsize=15)
+            plt.annotate(str(j), (xj, yj), textcoords="offset points", xytext=(5, 5), fontsize=20)
 
     plt.scatter(xt[0, :, 0].cpu(), yt[0, :, 0].cpu(), c="r", s=30, label="Target")
 
