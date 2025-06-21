@@ -55,8 +55,6 @@ def main():
     )
 
     def plot_fn(model, batches, name):
-        print("DELETE ME")
-        return
         is_training = model.training
         model.eval()
         # Calculates plot range

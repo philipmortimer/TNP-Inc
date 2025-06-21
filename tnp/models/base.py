@@ -93,7 +93,7 @@ class BatchedCausalTNP(BaseNeuralProcess):
         "xc: [m, nc, dx]",
         "yc: [m, nc, dy]",
         "xt: [m, nt, dx]",
-        "yt: [m, nt, dy]",
+        "yt: [m, nt_, dy]",
     )
     def forward(
         self,
@@ -102,10 +102,11 @@ class BatchedCausalTNP(BaseNeuralProcess):
         xt: torch.Tensor,
         yt: torch.Tensor,
     ) -> torch.distributions.Distribution:
-        x = torch.cat((xc, xt), dim=1)
-        y = torch.cat((yc, yt), dim=1)
         # AR style training
         if self.training:
+            assert xt.shape[1] == yt.shape[1], "xt and yt must both be same length when training"
+            x = torch.cat((xc, xt), dim=1)
+            y = torch.cat((yc, yt), dim=1)
             # Decoder doesnt look at zero shot context (first point)
             return self.likelihood(self.decoder(self.encoder(x=x, y=y)))
         else: # Inference time

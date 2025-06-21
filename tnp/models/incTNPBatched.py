@@ -29,27 +29,26 @@ class IncTNPBatchedEncoder(nn.Module):
 
     @check_shapes(
         "x: [m, n, dx]", "y: [m, n, dy]",
-        "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]"
+        "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]",
         "return: [m, n_t_or_n_minus_one, dz]",
     )
     def forward(
         self, x: Optional[torch.Tensor] = None, y: Optional[torch.Tensor] = None,
         xc: Optional[torch.Tensor] = None, yc: Optional[torch.Tensor] = None, xt: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        training = x is None and y is None
-        if training: assert xc is None and yc is None and xt is None, "Invalid Encoder - cant differentaite between train/inference setup"
-        else: assert x is None and y is None , "Invalid Encoder - cant differentaite between inference/training setup"
+        # Checks that it either provides (x,y) OR (xc, yc, xt) but not both. This is used to determine whether train / prediction is happening
+        assert (xc is None and yc is None and xt is None and y is not None and x is not None) or (xc is not None and yc is not None and xt is not None and x is None and y is None), "Invalid encoder call. Can't differentiate between prediction or training call"
 
-        if training: return train_encoder(x, y)
-        else: return predict_decoder(xc, yc , xt)
+        if x is not None and y is not None: return self.train_encoder(x, y)
+        else: return self.predict_encoder(xc, yc , xt)
 
     @check_shapes(
         "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "return: [m, n, dz]"
     )
-    def predict_encoder(xc: torch.Tensor, yc:torch.Tensor, xt:torch.Tensor):
+    def predict_encoder(self, xc: torch.Tensor, yc:torch.Tensor, xt:torch.Tensor):
         # At prediction time we essentially become identically to incTNP basic
         # (I.e.) just self attention over the context points and no cross attention mask.
-        nc = xc.shape[1]
+        m, nc, _ = xc.shape
         yc, yt = preprocess_observations(xt, yc)
 
         x = torch.cat((xc, xt), dim=1)
@@ -70,14 +69,13 @@ class IncTNPBatchedEncoder(nn.Module):
 
         zt = self.transformer_encoder(zc, zt, mask_sa=mask_sa, mask_ca=None)
         
-        assert len(zt.shape) == 3 and zt.shape[0] == m and zt.shape[1] == n - 1, "Return encoder shape wrong"
         return zt       
 
 
     @check_shapes(
         "x: [m, n, dx]", "y: [m, n, dy]","return: [m, n_minus_one, dz]"
     )
-    def train_encoder(x: torch.Tensor, y:torch.Tensor):
+    def train_encoder(self, x: torch.Tensor, y:torch.Tensor):
         m, n, dy = y.shape
         # Treats sequence as just x and y. y_tgt is set to just be 0s to
         # y_like vector with one fewer target point. This is because we dont want to train with prior (i.e empty context).
