@@ -9,6 +9,7 @@ from ..networks.transformer import TNPTransformerFullyMaskedEncoder
 from ..utils.helpers import preprocess_observations
 from .base import BatchedCausalTNP
 from .tnp import TNPDecoder
+from ..utils.helpers import preprocess_observations
 
 
 class IncTNPBatchedEncoder(nn.Module):
@@ -27,38 +28,89 @@ class IncTNPBatchedEncoder(nn.Module):
         self.y_encoder = y_encoder
 
     @check_shapes(
-        "x: [m, n, dx]", "y: [m, n, dy]", "return: [m, n, dz]"
+        "x: [m, n, dx]", "y: [m, n, dy]",
+        "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]"
+        "return: [m, n_t_or_n_minus_one, dz]",
     )
     def forward(
-        self, x: torch.Tensor, y: torch.Tensor
+        self, x: Optional[torch.Tensor] = None, y: Optional[torch.Tensor] = None,
+        xc: Optional[torch.Tensor] = None, yc: Optional[torch.Tensor] = None, xt: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        m, n, _ = x.shape
+        training = x is None and y is None
+        if training: assert xc is None and yc is None and xt is None, "Invalid Encoder - cant differentaite between train/inference setup"
+        else: assert x is None and y is None , "Invalid Encoder - cant differentaite between inference/training setup"
+
+        if training: return train_encoder(x, y)
+        else: return predict_decoder(xc, yc , xt)
+
+    @check_shapes(
+        "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "return: [m, n, dz]"
+    )
+    def predict_encoder(xc: torch.Tensor, yc:torch.Tensor, xt:torch.Tensor):
+        # At prediction time we essentially become identically to incTNP basic
+        # (I.e.) just self attention over the context points and no cross attention mask.
+        nc = xc.shape[1]
+        yc, yt = preprocess_observations(xt, yc)
+
+        x = torch.cat((xc, xt), dim=1)
+        x_encoded = self.x_encoder(x)
+        xc_encoded, xt_encoded = x_encoded.split((xc.shape[1], xt.shape[1]), dim=1)
+
+        y = torch.cat((yc, yt), dim=1)
+        y_encoded = self.y_encoder(y)
+        yc_encoded, yt_encoded = y_encoded.split((yc.shape[1], yt.shape[1]), dim=1)
+
+        zc = torch.cat((xc_encoded, yc_encoded), dim=-1)
+        zt = torch.cat((xt_encoded, yt_encoded), dim=-1)
+        zc = self.xy_encoder(zc)
+        zt = self.xy_encoder(zt)
+
+        mask_sa = torch.tril(torch.ones(nc, nc, dtype=torch.bool, device=zc.device), diagonal=0)
+        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
+
+        zt = self.transformer_encoder(zc, zt, mask_sa=mask_sa, mask_ca=None)
+        
+        assert len(zt.shape) == 3 and zt.shape[0] == m and zt.shape[1] == n - 1, "Return encoder shape wrong"
+        return zt       
+
+
+    @check_shapes(
+        "x: [m, n, dx]", "y: [m, n, dy]","return: [m, n_minus_one, dz]"
+    )
+    def train_encoder(x: torch.Tensor, y:torch.Tensor):
+        m, n, dy = y.shape
         # Treats sequence as just x and y. y_tgt is set to just be 0s to
-        y_like = torch.zeros(y.shape).to(y)
-        y_tgt = torch.cat((y_like, torch.ones(y.shape[:-1] + (1,)).to(y)), dim=-1)
+        # y_like vector with one fewer target point. This is because we dont want to train with prior (i.e empty context).
+        # May want to consider changing to having a learnable dummy variable in the context to learn a prior and include this within the loss.
+        y_like = torch.zeros((m, n-1, dy)).to(y)
+        y_tgt = torch.cat((y_like, torch.ones(y_like.shape[:-1] + (1,)).to(y)), dim=-1)
+        x_tgt = x[:, 1:, :]
+
         y_ctx = torch.cat((y, torch.zeros(y.shape[:-1] + (1,)).to(y)), dim=-1)
 
         # Encodes x and y
         x_encoded = self.x_encoder(x)
+        x_tgt_encoded = self.x_encoder(x_tgt)
         y_ctx_encoded = self.y_encoder(y_ctx)
         y_tgt_encoded = self.y_encoder(y_tgt)
 
         # Embeds data
         zc = torch.cat((x_encoded, y_ctx_encoded), dim=-1)
-        zt = torch.cat((x_encoded, y_tgt_encoded), dim=-1)
+        zt = torch.cat((x_tgt_encoded, y_tgt_encoded), dim=-1)
         zc = self.xy_encoder(zc)
         zt = self.xy_encoder(zt)
 
         # Creates masks. 
         # A target point can only attend to preceding context points.
-        mask_ca = torch.tril(torch.ones(n, n, dtype=torch.bool, device=zc.device), diagonal=-1)
+        mask_ca = torch.tril(torch.ones(n-1, n, dtype=torch.bool, device=zc.device), diagonal=0)
         mask_ca = mask_ca.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
         # Causal masking for context -> a context point can only attend to itself and previous context points.
         mask_sa = torch.tril(torch.ones(n, n, dtype=torch.bool, device=zc.device), diagonal=0)
         mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
 
         zt = self.transformer_encoder(zc, zt, mask_sa=mask_sa, mask_ca=mask_ca)
-        # Note - may want to slice zt to zt[:, 1:, :] because we don't use p(y_0) in loss (zero shot case)
+        
+        assert len(zt.shape) == 3 and zt.shape[0] == m and zt.shape[1] == n - 1, "Return encoder shape wrong"
         return zt
 
 

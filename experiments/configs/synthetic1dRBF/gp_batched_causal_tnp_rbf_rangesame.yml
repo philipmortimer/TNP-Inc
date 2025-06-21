@@ -64,7 +64,7 @@ tnp_encoder:
   xy_encoder: ${xy_encoder}
 
 transformer_encoder:
-  _target_: tnp.networks.transformer.TNPTransformerMaskedEncoder
+  _target_: tnp.networks.transformer.TNPTransformerFullyMaskedEncoder
   mhsa_layer: ${mhsa_layer}
   mhca_layer: ${mhca_layer}
   num_layers: ${params.num_layers}
