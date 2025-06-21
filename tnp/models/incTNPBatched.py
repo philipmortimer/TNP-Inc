@@ -82,13 +82,12 @@ class IncTNPBatchedEncoder(nn.Module):
         # May want to consider changing to having a learnable dummy variable in the context to learn a prior and include this within the loss.
         y_like = torch.zeros((m, n-1, dy)).to(y)
         y_tgt = torch.cat((y_like, torch.ones(y_like.shape[:-1] + (1,)).to(y)), dim=-1)
-        x_tgt = x[:, 1:, :]
 
         y_ctx = torch.cat((y, torch.zeros(y.shape[:-1] + (1,)).to(y)), dim=-1)
 
         # Encodes x and y
         x_encoded = self.x_encoder(x)
-        x_tgt_encoded = self.x_encoder(x_tgt)
+        x_tgt_encoded = x_encoded[:, 1:, :] # Same as before - we dont use x_0 as a target currently due to zero shot (also technically assumes x is iid encoded which is fair)
         y_ctx_encoded = self.y_encoder(y_ctx)
         y_tgt_encoded = self.y_encoder(y_tgt)
 

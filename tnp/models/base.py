@@ -105,6 +105,7 @@ class BatchedCausalTNP(BaseNeuralProcess):
         # AR style training
         if self.training:
             assert xt.shape[1] == yt.shape[1], "xt and yt must both be same length when training"
+            # Consider permuting this in future?
             x = torch.cat((xc, xt), dim=1)
             y = torch.cat((yc, yt), dim=1)
             # Decoder doesnt look at zero shot context (first point)

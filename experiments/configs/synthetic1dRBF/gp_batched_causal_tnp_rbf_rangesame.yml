@@ -130,7 +130,7 @@ params:
 
 
 misc:
-  project: mask-batched-tnp-rbf
+  project: mask-batched-tnp-rbf-rangesame
   name: mask-batched-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
   resume_from_checkpoint: null
   gradient_clip_val: 0.5
