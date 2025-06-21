@@ -101,8 +101,15 @@ class BatchedCausalTNP(BaseNeuralProcess):
         yc: torch.Tensor,
         xt: torch.Tensor,
         yt: torch.Tensor,
+        x: torch.Tensor,
+        y: torch.Tensor,
     ) -> torch.distributions.Distribution:
+        x = torch.cat((xc, xt), dim=1)
+        y = torch.cat((yt, yt), dim=1)
+        # AR style training
         if self.training:
-            # 
-            return self.likelihood(self.decoder(self.encoder(xc, yc, xt, yt), xt))
-        else:
+            return self.likelihood(self.decoder(self.encoder(x, y)))
+        else: # Inference time
+            print("TODO IMPLEMENT ME")
+            return self.likelihood(self.decoder(self.encoder(x, y)))
+        

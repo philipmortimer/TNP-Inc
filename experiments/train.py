@@ -55,6 +55,10 @@ def main():
     )
 
     def plot_fn(model, batches, name):
+        print("DELETE ME")
+        return
+        is_training = model.training
+        model.eval()
         # Calculates plot range
         min_tgt, max_tgt = np.array(experiment.params.target_range).min(), np.array(experiment.params.target_range).max()
         plot(
@@ -65,6 +69,7 @@ def main():
             pred_fn=experiment.misc.pred_fn,
             x_range = (min_tgt, max_tgt)
         )
+        if is_training: model.train()
 
     if experiment.misc.resume_from_checkpoint is not None:
         api = wandb.Api()

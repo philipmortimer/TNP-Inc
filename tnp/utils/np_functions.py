@@ -7,6 +7,7 @@ from ..models.base import (
     ConditionalNeuralProcess,
     LatentNeuralProcess,
     ARTNPNeuralProcess,
+    BatchedCausalTNP,
 )
 from ..models.convcnp import GriddedConvCNP
 
@@ -30,6 +31,8 @@ def np_pred_fn(
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
     elif isinstance(model, ARTNPNeuralProcess):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt, predict_without_yt_tnpa=predict_without_yt_tnpa)
+    elif isinstance(model, BatchedCausalTNP):
+        pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
     else:
         raise ValueError
 

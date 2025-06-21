@@ -5,12 +5,13 @@ import torch
 from check_shapes import check_shapes
 from torch import nn
 
-from ..networks.transformer import ISTEncoder, PerceiverEncoder, TNPTransformerEncoder
+from ..networks.transformer import TNPTransformerFullyMaskedEncoder
 from ..utils.helpers import preprocess_observations
-from .base import ConditionalNeuralProcess
+from .base import BatchedCausalTNP
+from .tnp import TNPDecoder
 
 
-class incTNPBatchedEncoder(nn.Module):
+class IncTNPBatchedEncoder(nn.Module):
     def __init__(
         self,
         transformer_encoder: Union[TNPTransformerFullyMaskedEncoder],
@@ -57,13 +58,15 @@ class incTNPBatchedEncoder(nn.Module):
         mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
 
         zt = self.transformer_encoder(zc, zt, mask_sa=mask_sa, mask_ca=mask_ca)
+        # Note - may want to slice zt to zt[:, 1:, :] because we don't use p(y_0) in loss (zero shot case)
         return zt
 
 
-class incTNPBatched(ConditionalNeuralProcess):
+
+class IncTNPBatched(BatchedCausalTNP):
     def __init__(
         self,
-        encoder: incTNPBatchedEncoder,
+        encoder: IncTNPBatchedEncoder,
         decoder: TNPDecoder,
         likelihood: nn.Module,
     ):
