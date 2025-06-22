@@ -47,7 +47,8 @@ matplotlib.rcParams.update({
 )
 @torch.no_grad()
 def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, perms_ctx: torch.Tensor, 
-    gt_pred, return_sample_index: Optional[int] = None,):
+    gt_pred, return_sample_index: Optional[int] = None,
+    sub_batch_size=256):
     # Computes ground truth nll measure (as mentioned in caption of figure 2)
     _, _, gt_loglik = gt_pred(
         xc=xc,
@@ -93,9 +94,31 @@ def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     x = torch.cat((xc_perm, xt_rep), dim=1)
     y = torch.cat((yc_perm, yt_rep), dim=1)
 
-    batch = Batch(x=x, y=y, xc=xc_perm, yc=yc_perm, xt=xt_rep, yt=yt_rep)
-    # Note we choose not to use teacher forcing here currently
-    log_probs = np_pred_fn(tnp_model, batch, predict_without_yt_tnpa=True).log_prob(yt_rep) # [K * m, nt, dy] 
+    # Chunked forward pass to prevent out of memory errors
+    all_log_probs = []
+    for i in range(0, k_m, sub_batch_size):
+        chunk_end = min(i + sub_batch_size, k_m)
+        chunk_xc = xc_perm[i:chunk_end]
+        chunk_yc = yc_perm[i:chunk_end]
+        chunk_xt = xt_rep[i:chunk_end]
+        chunk_yt = yt_rep[i:chunk_end]
+        chunk_x = torch.cat((chunk_xc, chunk_xt), dim=1)
+        chunk_y = torch.cat((chunk_yc, chunk_yt), dim=1)
+        chunk_batch = Batch(xc=chunk_xc, yc=chunk_yc, xt=chunk_xt, yt=chunk_yt, y=chunk_y, x=chunk_x)
+        
+        # Model inference. Note we choose not to use teacher forcing here currently
+        log_p_chunk = np_pred_fn(tnp_model, chunk_batch, predict_without_yt_tnpa=True).log_prob(chunk_yt)
+        all_log_probs.append(log_p_chunk)
+
+        # Delete unused datastraight away - probably excessive but just to be sure
+        #del chunk_batch, chunk_xc, chunk_yc, chunk_xt, chunk_yt, log_p_chunk
+
+    # More deletions
+    #del xc_perm, yc_perm, xt_rep
+    #torch.cuda.empty_cache()
+
+    # Converts list to tensor required
+    log_probs = torch.cat(all_log_probs, dim=0) # [K * m, nt, dy] 
     log_probs = log_probs.sum(dim=(-1, -2)).view(K, m) # sums over nt and dy [K, m]
 
     variance = log_probs.var(dim=0, unbiased=True) # Variance over K - this is Var_PI from eq 5 in paper (this gives [m])
@@ -273,28 +296,15 @@ def exchangeability_test(models, data, no_permutations=20, device='cuda', use_au
     print(f"NLL (eq 6) - mean: {mean_m_nlls} +/- {half_w_m_nll}")
     print("-----------")
 
-# Attempts to recreate something like figure 2
-def plot_models_setup_rbf_same():
-    # Defines each model
-    tnp_plain = ['experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', "TNP-D"]
-    inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', "incTNP"]
-    inc_tnp_batched=['experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', "incTNP-Batched"]
-    models = [tnp_plain, inc_tnp, inc_tnp_batched]
-
-    tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
-    tnp_ar_samples = [1, 5]
-    for i in tnp_ar_samples: models.append([tnp_ar_cptk, tnp_ar_yml, tnp_name, i])
-
+def get_plot_rbf(nc, nt, samples_per_epoch):
     # Data loader - RBF kernel in this case
     ard_num_dims = 1
     min_log10_lengthscale = -0.602
     max_log10_lengthscale = 0.0
-    nc, nt = 32, 64 
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     noise_std=0.1
-    samples_per_epoch = 100 # How many datapoints in datasets
-    batch_size = 8
+    batch_size = 128
     deterministic = True
 
     rbf_kernel_factory = partial(RBFKernel, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
@@ -302,9 +312,25 @@ def plot_models_setup_rbf_same():
     kernels = [rbf_kernel_factory]
     gen_val = RandomScaleGPGenerator(dim=1, min_nc=nc, max_nc=nc, min_nt=nt, max_nt=nt, batch_size=batch_size,
         context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=noise_std,
-        deterministic=True, kernel=kernels)
+        deterministic=deterministic, kernel=kernels)
+    return gen_val
+
+# Attempts to recreate something like figure 2
+def plot_models_setup_rbf_same():
+    nc, nt = 32, 128 
+    samples_per_epoch = 4_096 # How many datapoints in datasets
+    # Defines each model
+    models = []
+    tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
+    tnp_ar_samples = [50, 10, 1]
+    #for i in tnp_ar_samples: models.append([tnp_ar_cptk, tnp_ar_yml, tnp_name, i])
+    tnp_plain = ['experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', "TNP-D"]
+    inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', "incTNP"]
+    inc_tnp_batched=['experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', "incTNP-Batched"]
+    models.extend([tnp_plain, inc_tnp, inc_tnp_batched])
+
     
-    return gen_val, models, nc, nt, samples_per_epoch
+    return models, nc, nt, samples_per_epoch
 
 # Attempts to recreate something like figure 2. Use plot_models_setup as helper for this func.
 def plot_models(helper_tuple):
@@ -312,8 +338,11 @@ def plot_models(helper_tuple):
     tableau_colorblind_10 = ['#006BA4','#FF800E','#ABABAB','#595959','#5F9ED1','#C85200','#898989','#A2C8EC','#FFBC79','#CFCFCF']
     colours = cycle(tableau_colorblind_10)
     fig, ax = plt.subplots(figsize=(8.0, 6.0))
-    (gen_val, models, nc, nt, samples_per_epoch) = helper_tuple
+    (models, nc, nt, samples_per_epoch) = helper_tuple
     seq_len = nc + nt
+    # Stores all plotted points to calculate graph limits
+    all_xs = []
+    all_ys = []
     # Exchange hyperparams
     no_permutations=16
     use_autoreg_eq=False
@@ -322,6 +351,7 @@ def plot_models(helper_tuple):
     prev_model, prev_cptk, prev_yml = None, None, None
     for mod_data, colour in zip(models, colours):
         mod_cptk, mod_yml, model_name = mod_data[0], mod_data[1], mod_data[2]
+        print(model_name)
         # Loads model (reusing existing load if it only differs by samples)
         if len(mod_data) >= 4:
             model_name = model_name = model_name + f' ({mod_data[3]} samples)'
@@ -331,9 +361,21 @@ def plot_models(helper_tuple):
         else: model = get_model(mod_cptk, mod_yml)
         model.eval()
 
-        (mean_m_var, _,), (mean_m_nlls, _), m_var_nll_samples = exchange([model], gen_val, no_permutations=no_permutations, device='cuda', use_autoreg_eq=use_autoreg_eq, max_samples=max_samples, seq_len=seq_len, return_samples=return_samples)
+        (mean_m_var, _,), (mean_m_nlls, _), m_var_nll_samples = exchange([model], get_plot_rbf(nc, nt, samples_per_epoch), no_permutations=no_permutations, device='cuda', use_autoreg_eq=use_autoreg_eq, max_samples=max_samples, seq_len=seq_len, return_samples=return_samples)
         samples_m_var = [x[0].item() for x in m_var_nll_samples]
         samples_m_nll = [x[1].item() for x in m_var_nll_samples]
+
+        print(samples_m_nll)
+        # Hacky code - figure out why this is case. Filters out ugly / unexpected examples
+        idx_to_rem = [i for i in range(len(samples_m_nll)) if samples_m_nll[i] <= 0.5]
+        samples_m_nll = [samples_m_nll[i] for i in range(len(samples_m_nll)) if i not in idx_to_rem]
+        samples_m_var = [samples_m_var[i] for i in range(len(samples_m_var)) if i not in idx_to_rem]
+
+
+        all_xs.extend(samples_m_var)
+        all_xs.append(mean_m_var)
+        all_ys.extend(samples_m_nll)
+        all_ys.append(mean_m_nlls)
         # Plots small dots
         ax.scatter(
             samples_m_var,
@@ -364,6 +406,14 @@ def plot_models(helper_tuple):
         )
 
         prev_model, prev_cptk, prev_yml = model, mod_cptk, mod_yml
+
+    # Calculates log limits for graphs - will probably break in case of 0 / neg values (which can occurr but is prolly unlikely)
+    min_x_log = np.floor(np.log10(min(all_xs)))
+    max_x_log = np.ceil(np.log10(max(all_xs)))
+    min_y_log = np.floor(np.log10(min(all_ys)))
+    max_y_log = np.ceil(np.log10(max(all_ys)))
+    ax.set_xlim(10**min_x_log, 10**max_x_log)
+    ax.set_ylim(10**min_y_log, 10**max_y_log)
 
     ax.xaxis.set_major_formatter(LogFormatterMathtext())
     ax.yaxis.set_major_formatter(LogFormatterMathtext())
