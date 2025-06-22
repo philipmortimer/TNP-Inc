@@ -281,7 +281,7 @@ def plot_models_setup_rbf_same():
     inc_tnp_batched=['experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', "incTNP-Batched"]
     models = [tnp_plain, inc_tnp, inc_tnp_batched]
 
-    tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-6hwme8wi:v200', "TNP-A"
+    tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
     tnp_ar_samples = [1, 5]
     for i in tnp_ar_samples: models.append([tnp_ar_cptk, tnp_ar_yml, tnp_name, i])
 
@@ -292,18 +292,19 @@ def plot_models_setup_rbf_same():
     nc, nt = 32, 64 
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
-    samples_per_epoch = 4_096
-    batch_size = 64
+    noise_std=0.1
+    samples_per_epoch = 100 # How many datapoints in datasets
+    batch_size = 8
     deterministic = True
 
     rbf_kernel_factory = partial(RBFKernel, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     gen_val = RandomScaleGPGenerator(dim=1, min_nc=nc, max_nc=nc, min_nt=nt, max_nt=nt, batch_size=batch_size,
-        context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=0.1,
+        context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=noise_std,
         deterministic=True, kernel=kernels)
     
-    return gen_val, models, nc, nt
+    return gen_val, models, nc, nt, samples_per_epoch
 
 # Attempts to recreate something like figure 2. Use plot_models_setup as helper for this func.
 def plot_models(helper_tuple):
@@ -311,12 +312,12 @@ def plot_models(helper_tuple):
     tableau_colorblind_10 = ['#006BA4','#FF800E','#ABABAB','#595959','#5F9ED1','#C85200','#898989','#A2C8EC','#FFBC79','#CFCFCF']
     colours = cycle(tableau_colorblind_10)
     fig, ax = plt.subplots(figsize=(8.0, 6.0))
-    (gen_val, models, nc, nt) = helper_tuple
+    (gen_val, models, nc, nt, samples_per_epoch) = helper_tuple
     seq_len = nc + nt
     # Exchange hyperparams
-    no_permutations=64
+    no_permutations=16
     use_autoreg_eq=False
-    max_samples=100
+    max_samples=samples_per_epoch
     return_samples=10
     prev_model, prev_cptk, prev_yml = None, None, None
     for mod_data, colour in zip(models, colours):
