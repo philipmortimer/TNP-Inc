@@ -15,22 +15,49 @@ import wandb
 import os
 from typing import Optional
 from plot_adversarial_perms import get_model
-import matplotlib.pyplot as plt
 import matplotlib
+import matplotlib.pyplot as plt
 from itertools import cycle
 import random
 from tnp.utils.np_functions import np_pred_fn
 from tnp.data.base import Batch
+from matplotlib.ticker import LogFormatterMathtext
+from tnp.models.tnpa import TNPA
 
-matplotlib.rcParams["mathtext.fontset"] = "stix"
-matplotlib.rcParams["font.family"] = "STIXGeneral"
+
+# Good plt figures that take the font used in plot.py already
+matplotlib.rcParams.update({
+    "figure.dpi": 300,
+    "savefig.dpi": 300,
+    "font.family": "STIXGeneral",
+    "mathtext.fontset": "stix",
+    "axes.labelsize": 13,
+    "axes.titlesize": 14,
+    "xtick.labelsize": 11,
+    "ytick.labelsize": 11,
+    "legend.fontsize": 11,
+    "axes.linewidth": 1.1,
+    "grid.alpha": 0.25,
+    "grid.linestyle": "",
+})
 
 # Computes log joint variance of model - use Eq 5 but only for a fixed target and context set
 @check_shapes(
     "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]" , "perms_ctx: [K, nc]"
 )
 @torch.no_grad()
-def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, perms_ctx: torch.Tensor, return_sample_index: Optional[int] = None):
+def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, perms_ctx: torch.Tensor, 
+    gt_pred, return_sample_index: Optional[int] = None,):
+    # Computes ground truth nll measure (as mentioned in caption of figure 2)
+    _, _, gt_loglik = gt_pred(
+        xc=xc,
+        yc=yc,
+        xt=xt,
+        yt=yt,
+    ) # [m, nt]
+    gt_nll = -gt_loglik.sum(dim=1).to(xc.device) # sums over nt to get shape of [m]
+    gt_nll = gt_nll.unsqueeze(0) # [1, m] - allows for broacasting when we subtract later on
+
     # perms_ctx = [K, nc] - K permutations for nc context points with their indices in the tensor
     K, nc = perms_ctx.shape
     _, _, dy = yc.shape
@@ -74,7 +101,9 @@ def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     variance = log_probs.var(dim=0, unbiased=True) # Variance over K - this is Var_PI from eq 5 in paper (this gives [m])
     m_var_val = variance.mean().item() # Mean over m batches sampled from D^(n) - ie the monte-carlo approximation of the expectation
     # Also computes simplified version of eq 6 - the average NLL (a measure of model performance)
-    mean = log_probs.mean(dim=0) # expectation over K - i.e. E_PI (shape is [m])
+    neg_lp = - log_probs # [K, m]
+    excess_nll = neg_lp - gt_nll # This done to be in line with caption from figure 4 where mean is subtracted by gt_mean
+    mean = excess_nll.mean(dim=0) # expectation over K - i.e. E_PI (shape is [m])
     m_mean_val = mean.mean().item() # Avergaes over the m batches sampled from D^(n)
 
     # Can also randomly return a sample
@@ -180,7 +209,7 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
             
         # Computes m_var for each model
         for model  in models_with_different_seeds:
-            val = m_var_autoreg(model, x, y, perms, return_sample_index=return_sample_index) if use_autoreg_eq else m_var_fixed(model, xc, yc, xt, yt, perms, return_sample_index=return_sample_index)
+            val = m_var_autoreg(model, x, y, perms, return_sample_index=return_sample_index) if use_autoreg_eq else m_var_fixed(model, xc, yc, xt, yt, perms, gt_pred=data.gt_pred, return_sample_index=return_sample_index)
 
             mods_out_mvar.append(val[0])
             mods_out_mnll.append(val[1])
@@ -241,18 +270,20 @@ def exchangeability_test(models, data, no_permutations=20, device='cuda', use_au
     print("-----------")
     print(f"Exchangeability test time: {end_time - start_time:.4f} seconds")
     print(f"Exchangeability (eq 5): {mean_m_var} +/- {half_w_m_var}")
-    print(f"LL (eq 6): {mean_m_nlls} +/- {half_w_m_nll}")
+    print(f"NLL (eq 6) - mean: {mean_m_nlls} +/- {half_w_m_nll}")
     print("-----------")
 
 # Attempts to recreate something like figure 2
 def plot_models_setup_rbf_same():
-    # Loads each model
-    tnp_plain = (get_model('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200'), "TNP-D")
-    inc_tnp = (get_model('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200'), "incTNP")
-    tnp_ar = (get_model('experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-6hwme8wi:v200'), "TNP-A")
-    inc_tnp_batched=(get_model('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200'), "incTNP-Batched")
-    models = [tnp_plain, inc_tnp, tnp_ar, inc_tnp_batched]
-    #models = [inc_tnp_batched]
+    # Defines each model
+    tnp_plain = ['experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', "TNP-D"]
+    inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', "incTNP"]
+    inc_tnp_batched=['experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', "incTNP-Batched"]
+    models = [tnp_plain, inc_tnp, inc_tnp_batched]
+
+    tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-6hwme8wi:v200', "TNP-A"
+    tnp_ar_samples = [1, 5]
+    for i in tnp_ar_samples: models.append([tnp_ar_cptk, tnp_ar_yml, tnp_name, i])
 
     # Data loader - RBF kernel in this case
     ard_num_dims = 1
@@ -261,8 +292,8 @@ def plot_models_setup_rbf_same():
     nc, nt = 32, 64 
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
-    samples_per_epoch = 16_000
-    batch_size = 4
+    samples_per_epoch = 4_096
+    batch_size = 64
     deterministic = True
 
     rbf_kernel_factory = partial(RBFKernel, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
@@ -277,27 +308,38 @@ def plot_models_setup_rbf_same():
 # Attempts to recreate something like figure 2. Use plot_models_setup as helper for this func.
 def plot_models(helper_tuple):
     # Colour pallete to use
-    colours = cycle([
-        "#0072B2", "#D55E00", "#E69F00", "#009E73",
-        "#CC79A7", "#F0E442", "#56B4E9", "#000000"
-        ])
+    tableau_colorblind_10 = ['#006BA4','#FF800E','#ABABAB','#595959','#5F9ED1','#C85200','#898989','#A2C8EC','#FFBC79','#CFCFCF']
+    colours = cycle(tableau_colorblind_10)
     fig, ax = plt.subplots(figsize=(8.0, 6.0))
     (gen_val, models, nc, nt) = helper_tuple
     seq_len = nc + nt
-    for (model, model_name), colour in zip(models, colours):
+    # Exchange hyperparams
+    no_permutations=64
+    use_autoreg_eq=False
+    max_samples=100
+    return_samples=10
+    prev_model, prev_cptk, prev_yml = None, None, None
+    for mod_data, colour in zip(models, colours):
+        mod_cptk, mod_yml, model_name = mod_data[0], mod_data[1], mod_data[2]
+        # Loads model (reusing existing load if it only differs by samples)
+        if len(mod_data) >= 4:
+            model_name = model_name = model_name + f' ({mod_data[3]} samples)'
+        if len(mod_data) >= 4 and prev_cptk is not None and prev_yml is not None and prev_model is not None and isinstance(prev_model, TNPA) and model_name == "TNP-A":
+            model = prev_model
+            model.num_samples = mod_data[3]
+        else: model = get_model(mod_cptk, mod_yml)
         model.eval()
-        (mean_m_var, _,), (mean_m_nlls, _), m_var_nll_samples = exchange([model], gen_val, no_permutations=11, device='cuda', use_autoreg_eq=False, max_samples=10, seq_len=seq_len, return_samples=10)
 
+        (mean_m_var, _,), (mean_m_nlls, _), m_var_nll_samples = exchange([model], gen_val, no_permutations=no_permutations, device='cuda', use_autoreg_eq=use_autoreg_eq, max_samples=max_samples, seq_len=seq_len, return_samples=return_samples)
         samples_m_var = [x[0].item() for x in m_var_nll_samples]
         samples_m_nll = [x[1].item() for x in m_var_nll_samples]
-
         # Plots small dots
         ax.scatter(
             samples_m_var,
             samples_m_nll,
-            s=18,
+            s=50,
             c=[colour],
-            alpha=0.7,
+            alpha=1.0,
             marker='o',
             edgecolors='none',
             zorder=2,
@@ -305,24 +347,31 @@ def plot_models(helper_tuple):
 
         # Line to centroid dot
         for (sx, sy) in zip(samples_m_var, samples_m_nll):
-            ax.plot([mean_m_var, sx], [mean_m_nlls, sy], lw=0.8, c=colour, alpha=0.35,zorder=1)
+            ax.plot([mean_m_var, sx], [mean_m_nlls, sy], lw=1.6, c=colour, alpha=1.0,zorder=1)
 
         # Plots large dot
         ax.scatter(
             mean_m_var,
             mean_m_nlls,
-            s=100,
+            s=200,
             c=[colour],
-            alpha=0.95,
+            alpha=1.0,
             marker='o',
-            linewidth=0.6,
-            edgecolors='k',
+            edgecolors='none',
             label=model_name,
             zorder=3,
         )
-        
+
+        prev_model, prev_cptk, prev_yml = model, mod_cptk, mod_yml
+
+    ax.xaxis.set_major_formatter(LogFormatterMathtext())
+    ax.yaxis.set_major_formatter(LogFormatterMathtext())
     ax.set_xscale("log")
     ax.set_yscale("log")
+    ax.spines['left'].set_position(('outward', 8))
+    ax.spines['bottom'].set_position(('outward', 8))
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
 
     ax.set_xlabel("Joint Log-Likelihood Variance")
     ax.set_ylabel("Neg. Joint Log-Likelihood Mean (- Optimal)")
@@ -330,12 +379,9 @@ def plot_models(helper_tuple):
     # Tick params
     ax.tick_params(axis='both', which='major', length=4, width=0.8)
 
-    ax.legend(
-        frameon=False, ncol=2, handletextpad=0.4,
-        columnspacing=0.8, loc="upper left"
-    )
+    ax.legend()
 
-    ax.set_title("Implicit Bayesianness vs Performance")
+    ax.set_title(f"Implicit Bayesianness vs Performance (NC={nc}, NT={nt})")
 
     plt.savefig("experiments/plot_results/exchange/brunofig.png", bbox_inches="tight")
 
