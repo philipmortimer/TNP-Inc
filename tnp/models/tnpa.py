@@ -154,12 +154,12 @@ class TNPA(ARTNPNeuralProcess):
         dist = self._predict(xc, yc, xt, self.num_samples)
         mean, std = dist.mean, dist.stddev # mean and std both have shape [s, m, nt, dy] where m = 1 probably
         s, m, nt, dy = mean.shape
-        # Reorders to [m, nt, s, dy] - needed for mixture
-        mean = mean.permute(1,2,0,3)
-        std  = std .permute(1,2,0,3)
+        # Reorders to [m, nt, dy, s] - needed for mixture
+        mean = mean.permute(1,2,3,0)
+        std  = std.permute(1,2,3,0)
         
-        mix  = td.Categorical(torch.ones(m, nt, s, device=xt.device) / s)
-        comp = td.Independent(td.Normal(mean, std), 1)
+        mix  = td.Categorical(torch.full((m, nt, dy, s), 1.0 / s, device=xt.device))
+        comp = td.Normal(mean, std)
         approx_dist = td.MixtureSameFamily(mix, comp)
         return approx_dist
         

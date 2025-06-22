@@ -65,6 +65,7 @@ class ARConditionalNeuralProcess(BaseNeuralProcess):
         return self.likelihood(self.decoder(self.encoder(xc, yc, xt), xt))
 
 # Used specifically for tnpa only at the moment
+# Used specifically for tnpa only at the moment
 class ARTNPNeuralProcess(BaseNeuralProcess):
     @check_shapes(
         "xc: [m, nc, dx]",

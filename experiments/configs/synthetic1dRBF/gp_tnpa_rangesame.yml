@@ -112,7 +112,7 @@ params:
   num_layers: 5
 
   # Samples to be used when using monte carlo prediction (ie unrolling loop without teacher forcing for tnpa)
-  num_samples_pred: 13
+  num_samples_pred: 50
 
   # Synthetic 1D GP Params
   dim_x: 1
