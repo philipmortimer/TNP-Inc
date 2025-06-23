@@ -351,8 +351,27 @@ def plot_parallel_coordinates_bezier(
     plt.close()
 
 # Simple line graph plotting log probs as context set incrementally built up
-def plot_log_p_lines(log_p_s):
-    raise Error("Implement me")
+def plot_log_p_lines(log_p_s, fname, nt):
+    mult = 1.0
+    cmap_obj = plt.get_cmap('viridis', len(log_p_s))
+    colours = cmap_obj(range(len(log_p_s)))
+    markers = ("o", "s", "^", "D", "v", "X", "P", "*")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    x_ticks = []
+    for i, (log_p, name) in enumerate(log_p_s):
+        xs = [i + 1 for i in range(len(log_p))]
+        ax.plot(xs, log_p, label=name, marker=markers[i % len(markers)], color=colours[i],markersize=4,
+            linewidth=2.5)
+        x_ticks = xs
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.6)
+    ax.margins(x=0.01)
+    ax.set_xlabel("Context Size", fontsize=16*mult)
+    ax.set_ylabel("Log-Likelihood", fontsize=16*mult)
+    ax.set_title(f'Incremental Log-Likelihood (NT={nt})', fontsize=24*mult)
+    ax.set_xticks(x_ticks)
+    ax.legend(fontsize=13*mult)
+    fig.tight_layout()
+    plt.savefig(fname, bbox_inches="tight", dpi=300)
 
 
 # Plots range of likelihoods with different permutations
@@ -474,7 +493,7 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     plot_log_p_bins(log_p.cpu(), f"{folder_path}/bins_dist_greedy_lines_id_{file_id}", xc.shape[1], xt.shape[1], plain_tnp_mean, lines)
     plot_parallel_coordinates_bezier(perms=perms_greedy,log_p=log_p_greedy,
          xc=xc, xt=xt, file_name=f"{folder_path}/greedy_parra_cords_{file_id}", plot_targets=plot_targets, alpha_line=1.0)
-    plot_log_p_lines([(inc_logps_worst, "Worst Greedy"), (inc_logps_median, "Median Greedy"), (inc_logps_best, "Median Best")])
+    plot_log_p_lines([(inc_logps_best, "Best Greedy"), (inc_logps_median, "Median Greedy"), (inc_logps_worst, "Greedy Worst")], f"{folder_path}/greedy_lines_{file_id}", yt.shape[1])
 
 
 def get_model(config_path, weights_and_bias_ref, device='cuda'):
