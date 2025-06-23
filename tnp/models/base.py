@@ -113,4 +113,29 @@ class BatchedCausalTNP(BaseNeuralProcess):
             return self.likelihood(self.decoder(self.encoder(x=x, y=y)))
         else: # Inference time
             return self.likelihood(self.decoder(self.encoder(xc=xc, yc=yc, xt=xt), xt))
+
+# Used for the batched causal TNP with prior - so can handle an empty context set but seperated for different loss function
+class BatchedCausalTNPPrior(BaseNeuralProcess):
+    @check_shapes(
+        "xc: [m, nc, dx]",
+        "yc: [m, nc, dy]",
+        "xt: [m, nt, dx]",
+        "yt: [m, nt_, dy]",
+    )
+    def forward(
+        self,
+        xc: torch.Tensor,
+        yc: torch.Tensor,
+        xt: torch.Tensor,
+        yt: torch.Tensor,
+    ) -> torch.distributions.Distribution:
+        # AR style training
+        if self.training:
+            assert xt.shape[1] == yt.shape[1], "xt and yt must both be same length when training"
+            # Consider permuting this in future?
+            x = torch.cat((xc, xt), dim=1)
+            y = torch.cat((yc, yt), dim=1)
+            return self.likelihood(self.decoder(self.encoder(x=x, y=y)))
+        else: # Inference time
+            return self.likelihood(self.decoder(self.encoder(xc=xc, yc=yc, xt=xt), xt))
         

@@ -8,6 +8,7 @@ from ..models.base import (
     LatentNeuralProcess,
     ARTNPNeuralProcess,
     BatchedCausalTNP,
+    BatchedCausalTNPPrior,
 )
 from ..models.convcnp import GriddedConvCNP
 
@@ -32,6 +33,8 @@ def np_pred_fn(
     elif isinstance(model, ARTNPNeuralProcess):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt, predict_without_yt_tnpa=predict_without_yt_tnpa)
     elif isinstance(model, BatchedCausalTNP):
+        pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
+    elif isinstance(model, BatchedCausalTNPPrior):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
     else:
         raise ValueError
@@ -67,7 +70,20 @@ def np_loss_fn(
         # We average over all valid tokens in the calculation (and normalise by length)
         nll = - (log_p * mask).sum() / mask.sum()
         return nll
-    
-    pred_dist = np_pred_fn(model, batch, num_samples)  
-    loglik = pred_dist.log_prob(batch.yt).sum() / batch.yt[..., 0].numel()
-    return -loglik
+    elif isinstance(model, BatchedCausalTNPPrior):
+        # Similar loss to BatchedCausalTNP but incoproating a loss from zero shot example
+        pred_dist = np_pred_fn(model, batch, num_samples) # Normal dist
+        x = torch.cat((batch.xc, batch.xt), dim=1)
+        y = torch.cat((batch.yc, batch.yt), dim=1)
+        m, N, dy = y.shape
+        log_p = pred_dist.log_prob(y) # [m, N, dy]
+        log_p = log_p.mean(-1) # [m, N] - takes mean over dy dimension
+        mask = torch.ones((m, N), device=log_p.device) # Can use this specify what lengths we care about / don't (and how much) - may want to wait prior lower but is probably important for greedy order selection
+        # We average over all valid tokens in the calculation (and normalise by length)
+        nll = - (log_p * mask).sum() / mask.sum()
+        return nll
+    else:
+        
+        pred_dist = np_pred_fn(model, batch, num_samples)  
+        loglik = pred_dist.log_prob(batch.yt).sum() / batch.yt[..., 0].numel()
+        return -loglik

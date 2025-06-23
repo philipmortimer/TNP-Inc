@@ -7,7 +7,7 @@ from torch import nn
 
 from ..networks.transformer import TNPTransformerFullyMaskedEncoder
 from ..utils.helpers import preprocess_observations
-from .base import BatchedCausalTNP
+from .base import BatchedCausalTNPPrior
 from .tnp import TNPDecoder
 from ..utils.helpers import preprocess_observations
 
@@ -17,9 +17,9 @@ class IncTNPBatchedEncoderPrior(nn.Module):
         self,
         transformer_encoder: Union[TNPTransformerFullyMaskedEncoder],
         xy_encoder: nn.Module,
+        embed_dim: int, # This is dz and is used for the learnable empty token
         x_encoder: nn.Module = nn.Identity(),
         y_encoder: nn.Module = nn.Identity(),
-        embed_dim: int, # This is dz and is used for the learnable empty token
     ):
         super().__init__()
 
@@ -69,8 +69,12 @@ class IncTNPBatchedEncoderPrior(nn.Module):
         zc = self.xy_encoder(zc)
         zt = self.xy_encoder(zt)
 
-        mask_sa = torch.tril(torch.ones(nc, nc, dtype=torch.bool, device=zc.device), diagonal=0)
-        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
+        # Adds dummy start token to zc
+        start_token = self.empty_token.expand(m, -1, -1)
+        zc = torch.cat((start_token, zc), dim=1)
+
+        mask_sa = torch.tril(torch.ones(nc+1, nc+1, dtype=torch.bool, device=zc.device), diagonal=0)
+        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n + 1, n + 1]
 
         zt = self.transformer_encoder(zc, zt, mask_sa=mask_sa, mask_ca=None)
         
@@ -101,13 +105,13 @@ class IncTNPBatchedEncoderPrior(nn.Module):
         zt = self.xy_encoder(zt)
 
         # Adds dummy start token to zc
-        self.empty_token.expand(m, -1, -1)
-        zc = torch.cat((self.empty_token, zc), dim=1)
+        start_token = self.empty_token.expand(m, -1, -1)
+        zc = torch.cat((start_token, zc), dim=1)
 
         # Creates masks. 
         # A target point can only attend to preceding context points (plus dummy token)
         mask_ca = torch.tril(torch.ones(n, n + 1, dtype=torch.bool, device=zc.device), diagonal=0)
-        mask_ca = mask_ca.unsqueeze(0).expand(m, -1, -1) # [m, n + 1, n]
+        mask_ca = mask_ca.unsqueeze(0).expand(m, -1, -1) # [m, n, n + 1]
         # Causal masking for context -> a context point can only attend to itself and previous context points (including dummy token).
         mask_sa = torch.tril(torch.ones(n + 1, n + 1, dtype=torch.bool, device=zc.device), diagonal=0)
         mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n + 1, n + 1]
@@ -119,7 +123,7 @@ class IncTNPBatchedEncoderPrior(nn.Module):
 
 
 
-class IncTNPBatchedPrior(BatchedCausalTNP):
+class IncTNPBatchedPrior(BatchedCausalTNPPrior):
     def __init__(
         self,
         encoder: IncTNPBatchedEncoderPrior,
