@@ -550,7 +550,7 @@ if __name__ == "__main__":
     print(f'Time for perms greedy search: {time.time()-start_t:.2f}s')
     print("Starting search")
     perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(masked_model, xc, yc, data.xt, data.yt, 
-        no_permutations=1_00_000, device='cuda', batch_size=2048)
+        no_permutations=10_000_000, device='cuda', batch_size=2048)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
     visualise_perms(masked_model, perms, log_p, xc, yc, data.xt, data.yt,
         folder_path="experiments/plot_results/adversarial", file_id="1", gt_pred=data.gt_pred, 
