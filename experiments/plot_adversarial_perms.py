@@ -272,7 +272,7 @@ def plot_parallel_coordinates_bezier(
     
 
     # Colourmap
-    sm = ScalarMappable(cmap=plt.get_cmap('plasma'), norm=Normalize(vmin=log_p.min(), vmax=log_p.max()))
+    sm = ScalarMappable(cmap=plt.get_cmap('viridis'), norm=Normalize(vmin=log_p.min(), vmax=log_p.max()))
     sm.set_array([])
 
     fig, ax = plt.subplots(figsize=(15, 10))
@@ -410,7 +410,7 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     plot_parallel_coordinates_bezier(perms=perms_spaced,log_p=log_p_spaced, xc=xc, xt=xt, 
         file_name=file_name+"_spaced", plot_targets=plot_targets, alpha_line=0.4)
     plot_parallel_coordinates_bezier(perms=perms_extreme,log_p=log_p_extreme, xc=xc, xt=xt, 
-        file_name=file_name+"_extreme", plot_targets=plot_targets, alpha_line=0.9)
+        file_name=file_name+"_extreme", plot_targets=plot_targets, alpha_line=1.0)
 
     # Bins log probabilities to show variation in log probability with differing permutations
     plain_tnp_mean = None
