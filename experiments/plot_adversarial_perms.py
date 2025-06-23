@@ -352,14 +352,16 @@ def plot_parallel_coordinates_bezier(
 
 
 # Plots range of likelihoods with different permutations
-def plot_log_p_bins(log_p, file_name, nc, nt, plain_tnp_perf=None):
+def plot_log_p_bins(log_p, file_name, nc, nt, plain_tnp_perf=None, lines=[]):
     fig, ax = plt.subplots(figsize=(15, 10))
 
     lp_mean = log_p.mean()
     ax.axvline(lp_mean, color="grey", linestyle=":", linewidth=2.0, label=fr"Mean ($\mu={lp_mean:.2f}$)")
     lp_median = log_p.median()
     ax.axvline(lp_median, color="black", linestyle=":", linewidth=2.0, label=fr"Median ($\mathrm{{median}} = {lp_median:.2f}$)")
-
+    # Adds additional lines - e.g. from greedy search
+    for (name, colour, location) in lines:
+        ax.axvline(location, color=colour, linestyle="-.", linewidth=2.5, label=name)
     # Histogram
     ax.hist(log_p, bins='auto', density=True)
     ax.set_xlabel("Log-Likelihood", fontsize=16)
@@ -378,7 +380,44 @@ def plot_log_p_bins(log_p, file_name, nc, nt, plain_tnp_perf=None):
         plt.savefig(file_name + "_withbasetnp.png", bbox_inches="tight", dpi=300)
     plt.close()
 
+# Gets permutations and log probabilities for greedy selection (and the opposite) plus also median selection
+@check_shapes(
+    "xc: [1, nc, dx]", "yc: [1, nc, dy]", "xt: [1, nt, dx]", "yt: [1, nt, dy]"
+)
+@torch.no_grad()
+def greedy_selection_strats(masked_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, policy: str = "best", device: str="cuda"):
+    assert policy == "best" or policy == "worst" or policy == "median", "Invalid policy"
+    xc, yc, xt, yt = xc.to(device), yc.to(device), xt.to(device), yt.to(device)
+    # When deciding the context set ordering, start with an empty context set and build up greedily (or according to some shallow strategy)
+    _, nc, dx = xc.shape
+    _, nt, dy = yt.shape
+    idx_not_picked = [i for i in range(nc)] # Stores all unpicked indexes in context set
 
+    # Incrementally builds up representation
+    perm, log_p = [], []
+    xc_new, yc_new = torch.empty((1, 0, dx), device=xc.device), torch.empty((1, 0, dy), device=yc.device)
+    for _ in range(nc):
+        # Builds up greedy probs based on all remaining candidate context points. Can also batch these together to make more effecient !!
+        log_p_this_iteration = []
+        for i in idx_not_picked:
+            xc_candidate = torch.cat((xc_new, xc[:, i:i+1, :]), dim=1) 
+            yc_candidate = torch.cat((yc_new, yc[:, i:i+1, :]), dim=1)
+            log_prob_candidate = (masked_model(xc_candidate, yc_candidate, xt).log_prob(yt).sum(dim=(-1, -2)) / (nt * dy)).item()
+            log_p_this_iteration.append(log_prob_candidate)
+        # Selects next point in order -> can have different strategies here
+        best_idx = np.argmax(log_p_this_iteration)
+        worst_idx = np.argmin(log_p_this_iteration)
+        k = (len(log_p_this_iteration) - 1) // 2
+        median_idx = int(np.argpartition(log_p_this_iteration, k)[k])
+        idx_chosen = best_idx if policy == "best" else (worst_idx if policy == "worst" else median_idx)
+        point_idx = idx_not_picked[idx_chosen]
+        # Updates context set and log_prob and perm
+        xc_new = torch.cat((xc_new, xc[:, point_idx:point_idx+1, :]), dim=1) 
+        yc_new = torch.cat((yc_new, yc[:, point_idx:point_idx+1, :]), dim=1) 
+        log_p.append(log_p_this_iteration[idx_chosen])
+        perm.append(point_idx)
+        idx_not_picked.remove(point_idx)
+    return perm, log_p
 
 
 # Generates plots of permutations
@@ -386,6 +425,8 @@ def plot_log_p_bins(log_p, file_name, nc, nt, plain_tnp_perf=None):
     "perms: [K, nc]", "log_p: [K]", "xc: [1, nc, dx]", "yc: [1, nc, dy]", "xt: [1, nt, dx]", "yt: [1, nt, dy]"
 )
 def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, 
+    perm_best, inc_logps_best, perm_worst, inc_logps_worst,
+    perm_median, inc_logps_median,
     folder_path: str="plot_results/adversarial", file_id: str=str(random.randint(0, 1000000)), gt_pred: Optional[GroundTruthPredictor] = None,
     plain_tnp_model = None):
     log_p, indices = torch.sort(log_p)
@@ -419,6 +460,17 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
         nt, dy = yt.shape[-2:]
         plain_tnp_mean = (plain_tnp_model(xc, yc, xt).log_prob(yt).sum(dim=(-1, -2)) / (nt * dy)).item()
     plot_log_p_bins(log_p.cpu(), f"{folder_path}/bins_dist_id_{file_id}", xc.shape[1], xt.shape[1], plain_tnp_mean)
+    # Greedy line plots 
+    #Plots bins with greedy lines also
+    lines = [(fr"Best Greedy (${inc_logps_best[-1]:.2f}$)", "green", inc_logps_best[-1]), (fr"Median Greedy (${inc_logps_median[-1]:.2f}$)", "yellow", inc_logps_median[-1]),
+        (fr"Worst Greedy (${inc_logps_worst[-1]:.2f}$)", "blue", inc_logps_worst[-1])]
+    # Para coords greedy
+    perms_greedy = torch.tensor([perm_worst, perm_median, perm_best])
+    log_p_greedy = torch.tensor([inc_logps_worst[-1], inc_logps_median[-1], inc_logps_best[-1]])
+    plot_log_p_bins(log_p.cpu(), f"{folder_path}/bins_dist_greedy_lines_id_{file_id}", xc.shape[1], xt.shape[1], plain_tnp_mean, lines)
+    plot_parallel_coordinates_bezier(perms=perms_greedy,log_p=log_p_greedy,
+         xc=xc, xt=xt, file_name=f"{folder_path}/greedy_parra_cords_{file_id}", plot_targets=plot_targets, alpha_line=1.0)
+
 
 def get_model(config_path, weights_and_bias_ref, device='cuda'):
     raw_config = deep_convert_dict(
@@ -490,10 +542,18 @@ if __name__ == "__main__":
     yc = data.yc
     xc, indices = torch.sort(xc, dim=1)
     yc = torch.gather(yc, dim=1, index=indices)
+    print("Getting perms greedy search")
+    start_t = time.time()
+    perm_best, inc_logps_best = greedy_selection_strats(masked_model, xc, yc, data.xt, data.yt, policy="best")
+    perm_worst, inc_logps_worst = greedy_selection_strats(masked_model, xc, yc, data.xt, data.yt, policy="worst")
+    perm_median, inc_logps_median = greedy_selection_strats(masked_model, xc, yc, data.xt, data.yt, policy="median")
+    print(f'Time for perms greedy search: {time.time()-start_t:.2f}s')
     print("Starting search")
     perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(masked_model, xc, yc, data.xt, data.yt, 
-        no_permutations=10_000_000, device='cuda', batch_size=2048)
+        no_permutations=1_00_000, device='cuda', batch_size=2048)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
     visualise_perms(masked_model, perms, log_p, xc, yc, data.xt, data.yt,
         folder_path="experiments/plot_results/adversarial", file_id="1", gt_pred=data.gt_pred, 
-        plain_tnp_model=plain_model)
+        plain_tnp_model=plain_model,
+        perm_best=perm_best, inc_logps_best=inc_logps_best, perm_worst=perm_worst, inc_logps_worst=inc_logps_worst,
+        perm_median=perm_median, inc_logps_median=inc_logps_median)
