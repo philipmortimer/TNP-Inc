@@ -240,6 +240,7 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
         m_vars.append(mods_out_mvar)
         m_nlls.append(mods_out_mnll)
         i += 1
+        print(f'i={i} max_samples={max_samples} processed_so_far={i * batch_size}')
         if max_samples is not None and  i >= max_samples: break
 
     assert i>=1, "No data batches were processed."
@@ -304,7 +305,7 @@ def get_plot_rbf(nc, nt, samples_per_epoch):
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     noise_std=0.1
-    batch_size = 128
+    batch_size = 64
     deterministic = True
 
     rbf_kernel_factory = partial(RBFKernel, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
@@ -317,17 +318,17 @@ def get_plot_rbf(nc, nt, samples_per_epoch):
 
 # Attempts to recreate something like figure 2
 def plot_models_setup_rbf_same():
-    nc, nt = 32, 128 
-    samples_per_epoch = 4_096 # How many datapoints in datasets
+    nc, nt = 10, 10 
+    samples_per_epoch = 1600 # How many datapoints in datasets
     # Defines each model
     models = []
     tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
-    tnp_ar_samples = [50, 10, 1]
-    #for i in tnp_ar_samples: models.append([tnp_ar_cptk, tnp_ar_yml, tnp_name, i])
+    tnp_ar_samples = [100]
     tnp_plain = ['experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', "TNP-D"]
     inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', "incTNP"]
     inc_tnp_batched=['experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', "incTNP-Batched"]
     models.extend([tnp_plain, inc_tnp, inc_tnp_batched])
+    for i in tnp_ar_samples: models.append([tnp_ar_cptk, tnp_ar_yml, tnp_name, i])
 
     
     return models, nc, nt, samples_per_epoch
@@ -344,9 +345,10 @@ def plot_models(helper_tuple):
     all_xs = []
     all_ys = []
     # Exchange hyperparams
-    no_permutations=16
+    no_permutations=32
     use_autoreg_eq=False
     max_samples=samples_per_epoch
+    #max_samples = 100
     return_samples=10
     prev_model, prev_cptk, prev_yml = None, None, None
     for mod_data, colour in zip(models, colours):
@@ -364,10 +366,13 @@ def plot_models(helper_tuple):
         (mean_m_var, _,), (mean_m_nlls, _), m_var_nll_samples = exchange([model], get_plot_rbf(nc, nt, samples_per_epoch), no_permutations=no_permutations, device='cuda', use_autoreg_eq=use_autoreg_eq, max_samples=max_samples, seq_len=seq_len, return_samples=return_samples)
         samples_m_var = [x[0].item() for x in m_var_nll_samples]
         samples_m_nll = [x[1].item() for x in m_var_nll_samples]
-
+        
+        print(mean_m_var)
+        print(mean_m_nlls)
+        print(m_var_nll_samples)
         print(samples_m_nll)
         # Hacky code - figure out why this is case. Filters out ugly / unexpected examples
-        idx_to_rem = [i for i in range(len(samples_m_nll)) if samples_m_nll[i] <= 0.5]
+        idx_to_rem = [i for i in range(len(samples_m_nll)) if samples_m_nll[i] <= 0.0]
         samples_m_nll = [samples_m_nll[i] for i in range(len(samples_m_nll)) if i not in idx_to_rem]
         samples_m_var = [samples_m_var[i] for i in range(len(samples_m_var)) if i not in idx_to_rem]
 
