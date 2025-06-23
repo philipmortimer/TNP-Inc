@@ -369,7 +369,7 @@ def plot_log_p_lines(log_p_s, fname, nt):
     ax.set_ylabel("Log-Likelihood", fontsize=16*mult)
     ax.set_title(f'Incremental Log-Likelihood (NT={nt})', fontsize=24*mult)
     ax.set_xticks(x_ticks)
-    ax.legend(fontsize=13*mult)
+    ax.legend(fontsize=10*mult)
     fig.tight_layout()
     plt.savefig(fname, bbox_inches="tight", dpi=300)
 
