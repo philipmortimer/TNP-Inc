@@ -350,6 +350,10 @@ def plot_parallel_coordinates_bezier(
 
     plt.close()
 
+# Simple line graph plotting log probs as context set incrementally built up
+def plot_log_p_lines(log_p_s):
+    raise Error("Implement me")
+
 
 # Plots range of likelihoods with different permutations
 def plot_log_p_bins(log_p, file_name, nc, nt, plain_tnp_perf=None, lines=[]):
@@ -470,6 +474,7 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     plot_log_p_bins(log_p.cpu(), f"{folder_path}/bins_dist_greedy_lines_id_{file_id}", xc.shape[1], xt.shape[1], plain_tnp_mean, lines)
     plot_parallel_coordinates_bezier(perms=perms_greedy,log_p=log_p_greedy,
          xc=xc, xt=xt, file_name=f"{folder_path}/greedy_parra_cords_{file_id}", plot_targets=plot_targets, alpha_line=1.0)
+    plot_log_p_lines([(inc_logps_worst, "Worst Greedy"), (inc_logps_median, "Median Greedy"), (inc_logps_best, "Median Best")])
 
 
 def get_model(config_path, weights_and_bias_ref, device='cuda'):

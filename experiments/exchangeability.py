@@ -48,7 +48,7 @@ matplotlib.rcParams.update({
 @torch.no_grad()
 def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, perms_ctx: torch.Tensor, 
     gt_pred, return_sample_index: Optional[int] = None,
-    sub_batch_size=256):
+    sub_batch_size=1024):
     # Computes ground truth nll measure (as mentioned in caption of figure 2)
     _, _, gt_loglik = gt_pred(
         xc=xc,
@@ -305,7 +305,7 @@ def get_plot_rbf(nc, nt, samples_per_epoch):
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     noise_std=0.1
-    batch_size = 64
+    batch_size = 128
     deterministic = True
 
     rbf_kernel_factory = partial(RBFKernel, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
@@ -318,17 +318,17 @@ def get_plot_rbf(nc, nt, samples_per_epoch):
 
 # Attempts to recreate something like figure 2
 def plot_models_setup_rbf_same():
-    nc, nt = 10, 10 
-    samples_per_epoch = 1600 # How many datapoints in datasets
+    nc, nt = 32, 128 
+    samples_per_epoch = 4096 # How many datapoints in datasets
     # Defines each model
     models = []
     tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
     tnp_ar_samples = [100]
     tnp_plain = ['experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', "TNP-D"]
-    inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', "incTNP"]
-    inc_tnp_batched=['experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', "incTNP-Batched"]
+    inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', "incTNP (This Work)"]
+    inc_tnp_batched=['experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', "incTNP-Batched (This Work)"]
     models.extend([tnp_plain, inc_tnp, inc_tnp_batched])
-    for i in tnp_ar_samples: models.append([tnp_ar_cptk, tnp_ar_yml, tnp_name, i])
+    #for i in tnp_ar_samples: models.append([tnp_ar_cptk, tnp_ar_yml, tnp_name, i])
 
     
     return models, nc, nt, samples_per_epoch
@@ -345,7 +345,7 @@ def plot_models(helper_tuple):
     all_xs = []
     all_ys = []
     # Exchange hyperparams
-    no_permutations=32
+    no_permutations=64
     use_autoreg_eq=False
     max_samples=samples_per_epoch
     #max_samples = 100
