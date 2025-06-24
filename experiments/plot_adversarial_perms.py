@@ -475,12 +475,14 @@ def greedy_variance_ctx_builder(masked_model, xc: torch.Tensor, yc: torch.Tensor
         n_remaining = nc - step
         idx_remaining = not_picked_idx[:, 1].reshape(m, n_remaining) # [m, n_remaining]
         xt_candidates = xc[batch_idx.unsqueeze(1), idx_remaining] # [m, n_remaining, dx]
+        yt_candidates = yc[batch_idx.unsqueeze(1), idx_remaining]
 
         # Runs inference
         batch = Batch(xc=xc_new, yc=yc_new, xt=xt_candidates, yt=None, y=None, x=None) # This is dodgy because maybe some models rely on x, yt, y, x
         #pred_dist = masked_model(xc_new, yc_new, xt_candidates)
-        pred_dist = np_pred_fn(masked_model, batch, predict_without_yt_tnpa=True)
+        pred_dist = np_pred_fn(masked_model, batch, predict_without_yt_tnpa=True) # [m, n_remaining, dy]
         var = pred_dist.variance.mean(-1) # [m, n_remaining]
+        var = (pred_dist.log_prob(yt_candidates).sum(dim=(-1)) / (len(yt_candidates) * dy))
 
         # Selection strategy
         if policy == "best": selected_points = var.argmax(dim=1) # [m]
@@ -636,7 +638,7 @@ if __name__ == "__main__":
     #masked_model.eval()
 
     masked_model = get_model('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v61')
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v100')
     masked_model.eval()
 
     # Sorts context in order
@@ -663,7 +665,7 @@ if __name__ == "__main__":
 
     print("Starting search")
     perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(masked_model, xc, yc, data.xt, data.yt, 
-        no_permutations=1_000, device='cuda', batch_size=2048)
+        no_permutations=100_000, device='cuda', batch_size=2048)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
     visualise_perms(masked_model, perms, log_p, xc, yc, data.xt, data.yt,
         folder_path="experiments/plot_results/adversarial", file_id="1", gt_pred=data.gt_pred, 
