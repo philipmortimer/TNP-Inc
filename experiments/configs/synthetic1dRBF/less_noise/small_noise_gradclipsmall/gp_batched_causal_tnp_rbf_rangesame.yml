@@ -133,7 +133,7 @@ misc:
   project: mask-batched-tnp-rbf-rangesame-smallnoise-gradsmall
   name: mask-batched-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
   resume_from_checkpoint: null
-  gradient_clip_val: 0.25
+  gradient_clip_val: 0.125
   plot_interval: 10
 
   # Plot misc

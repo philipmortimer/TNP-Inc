@@ -3,6 +3,7 @@ from abc import ABC
 import torch
 from check_shapes import check_shapes
 from torch import nn
+from typing import Optional, Union
 
 from ..likelihoods.base import UniformMixtureLikelihood
 
@@ -120,18 +121,18 @@ class BatchedCausalTNPPrior(BaseNeuralProcess):
         "xc: [m, nc, dx]",
         "yc: [m, nc, dy]",
         "xt: [m, nt, dx]",
-        "yt: [m, nt_, dy]",
     )
     def forward(
         self,
         xc: torch.Tensor,
         yc: torch.Tensor,
         xt: torch.Tensor,
-        yt: torch.Tensor,
+        yt: Optional[torch.Tensor] = None,
     ) -> torch.distributions.Distribution:
+        if yt is not None: assert yt.shape[0] == xc.shape[0] and yt.shape[2] == yc.shape[2], "Invalid yt shape"
         # AR style training
         if self.training:
-            assert xt.shape[1] == yt.shape[1], "xt and yt must both be same length when training"
+            assert yt is not None and xt.shape[1] == yt.shape[1], "xt and yt must both be same length when training"
             # Consider permuting this in future?
             x = torch.cat((xc, xt), dim=1)
             y = torch.cat((yc, yt), dim=1)
