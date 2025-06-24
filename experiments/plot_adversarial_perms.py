@@ -447,24 +447,25 @@ def greedy_selection_strats(masked_model, xc: torch.Tensor, yc: torch.Tensor, xt
 
 # Uses a greedy variance selection strategy for a masked tnp model that supports conditioning on an empty context sete
 @check_shapes(
-    "xc: [m, nc, dx]", "yc: [m, nc, dy]"
+    "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]"
 )
 @torch.no_grad()
-def greedy_variance_ctx_builder(masked_model, xc: torch.Tensor, yc: torch.Tensor, 
+def greedy_variance_ctx_builder(masked_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor,
     policy: str = "best", device: str="cuda") -> Tuple[torch.LongTensor, torch.Tensor]:
     assert policy in {"best", "worst", "median"}, "Invalid policy"
     assert isinstance(masked_model, IncTNPBatchedPrior), "Only supports specific zero prioir conditioned model atm"
 
-    xc, yc = xc.to(device), yc.to(device)
+    xc, yc, xt, yt = xc.to(device), yc.to(device), xt.to(device), yt.to(device)
     # When deciding the context set ordering, start with an empty context set and build up greedily (or according to some shallow strategy)
     _, _, dx = xc.shape
     m, nc, dy = yc.shape
+    _, nt, _ = xt.shape
 
     # Tracks which context points have been picked
     picked_mask = torch.zeros(m, nc, dtype=torch.bool, device=device) # Stores whether a context point has been picked
     perm = torch.full((m, nc), -1, dtype=torch.long,  device=device) # Use to record perms - don't use this in a mission critical loop
     var_track = torch.zeros((m, nc), device=device) # Tracks variance of points over time - again for visualisation not performance
-
+    ll_track = torch.zeros((m, nc), device=device)
 
     # Incrementally builds up representation
     batch_idx = torch.arange(m, device=device)
@@ -481,8 +482,9 @@ def greedy_variance_ctx_builder(masked_model, xc: torch.Tensor, yc: torch.Tensor
         batch = Batch(xc=xc_new, yc=yc_new, xt=xt_candidates, yt=None, y=None, x=None) # This is dodgy because maybe some models rely on x, yt, y, x
         #pred_dist = masked_model(xc_new, yc_new, xt_candidates)
         pred_dist = np_pred_fn(masked_model, batch, predict_without_yt_tnpa=True) # [m, n_remaining, dy]
-        var = pred_dist.variance.mean(-1) # [m, n_remaining]
-        var = (pred_dist.log_prob(yt_candidates).sum(dim=(-1)) / (len(yt_candidates) * dy))
+        #var = pred_dist.variance.mean(-1) # [m, n_remaining]
+        var = (pred_dist.log_prob(yt_candidates).sum(dim=(-1)) / (n_remaining * dy))
+
 
         # Selection strategy
         if policy == "best": selected_points = var.argmax(dim=1) # [m]
@@ -500,11 +502,17 @@ def greedy_variance_ctx_builder(masked_model, xc: torch.Tensor, yc: torch.Tensor
         yc_new = torch.cat([yc_new, added_yc], dim=1)
         picked_mask[batch_idx, selected_points_global] = True # Shows that point has been picked
 
+        # Tracks performance just for plotting purposes - not to be used for performance cricital sections
+        batch = Batch(xc=xc_new, yc=yc_new, xt=xt, yt=yt, y=None, x=None)
+        pred_dist = np_pred_fn(masked_model, batch, predict_without_yt_tnpa=True)
+        ll = (pred_dist.log_prob(yt).sum(dim=(-1, -2)) / (nt * dy)) # [m]
+
         # Updates tracked stats for visualisation
         perm[batch_idx, step] = selected_points_global
         var_track[batch_idx, step] = selected_variance
+        ll_track[batch_idx, step] = ll
 
-    return perm, var_track # both have return shape of [m, nc] each
+    return perm, ll_track # both have return shape of [m, nc] each
 
 
 # Generates plots of permutations
@@ -618,7 +626,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 12, 128
+    nc, nt = 32, 128
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
@@ -638,7 +646,7 @@ if __name__ == "__main__":
     #masked_model.eval()
 
     masked_model = get_model('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v100')
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v150')
     masked_model.eval()
 
     # Sorts context in order
@@ -649,9 +657,9 @@ if __name__ == "__main__":
 
     print("Getting perms VARIANCE greedy search")
     start_t = time.time()
-    var_perm_best, inc_vars_best = greedy_variance_ctx_builder(masked_model, xc, yc, policy="best")
-    var_perm_worst, inc_vars_worst = greedy_variance_ctx_builder(masked_model, xc, yc, policy="worst")
-    var_perm_median, inc_vars_median = greedy_variance_ctx_builder(masked_model, xc, yc, policy="median")
+    var_perm_best, inc_vars_best = greedy_variance_ctx_builder(masked_model, xc, yc, data.xt, data.yt, policy="best")
+    var_perm_worst, inc_vars_worst = greedy_variance_ctx_builder(masked_model, xc, yc,data.xt, data.yt, policy="worst")
+    var_perm_median, inc_vars_median = greedy_variance_ctx_builder(masked_model, xc, yc,data.xt, data.yt, policy="median")
     var_perm_best, inc_vars_best = var_perm_best.squeeze(0).tolist(), inc_vars_best.squeeze(0).tolist()
     var_perm_worst, inc_vars_worst = var_perm_worst.squeeze(0).tolist(), inc_vars_worst.squeeze(0).tolist()
     var_perm_median, inc_vars_median = var_perm_median.squeeze(0).tolist(), inc_vars_median.squeeze(0).tolist()
