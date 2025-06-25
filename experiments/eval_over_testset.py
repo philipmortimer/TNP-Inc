@@ -160,7 +160,7 @@ def get_rbf_rangesame_test_set():
 def models_perf_main(model_list, test_set, no_reps):
     folder_name = "experiments/plot_results/eval_set/"
     txt_file_summary = f'Summary over eval data set (likely rbf rangesame) with {no_reps} reps'
-    for (yml_path, wandb_id, shuffle_strategy, model_name, special_args) in tqdm(model_list, desc="Looping over models"):
+    for (yml_path, wandb_id, shuffle_strategy, model_name, special_args) in model_list:
         model = get_model(yml_path, wandb_id, seed=False) # Loads model
         if special_args.startswith("TNPAR_"):
             model.num_samples = int(special_args.split("_")[1])
@@ -178,6 +178,7 @@ def models_perf_main(model_list, test_set, no_reps):
         Std_GT_LLs: {results["std_gt_lls"]}
         """
         txt_file_summary += summary_block
+        print(summary_block)
     with open(folder_name + 'eval_summary.txt', 'w') as file_object:
         file_object.write(txt_file_summary)
 
@@ -212,14 +213,12 @@ def get_model_list():
     models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
         greedy_best_tnp_causal_batched_prior, greedy_worst_tnp_causal_batched_prior, greedy_median_tnp_causal_batched_prior,
         tnp_ar_5, tnp_ar_50, tnp_ar_100]
-
-    models = [tnp_ar_5, tnp_ar_50]
     return models
 
 if __name__ == "__main__":
     start_t = time.time()
     pl.seed_everything(1) #  Sets seed of randomness for reproducibility
-    no_reps = 1 # Number of repititions to aggregate performance over
+    no_reps = 100 # Number of repititions to aggregate performance over
     models_perf_main(get_model_list(), get_rbf_rangesame_test_set(), no_reps=no_reps)
     print(f'Runtime: {time.time()-start_t:.2f}s')
     
