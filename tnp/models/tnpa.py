@@ -104,7 +104,7 @@ class TNPA(ARTNPNeuralProcess):
     @check_shapes(
     "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]"
     )  
-    def _predict(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, num_samples=50) -> td.Normal:
+    def _predict(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, num_samples) -> td.Normal:
         batch_size = xc.shape[0]
         num_target = xt.shape[1]
         

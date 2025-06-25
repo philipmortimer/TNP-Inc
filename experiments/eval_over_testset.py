@@ -37,28 +37,35 @@ import matplotlib.patheffects as pe
 from tnp.data.base import Batch
 from tnp.models.incTNPBatchedPrior import IncTNPBatchedPrior
 from plot_adversarial_perms import get_model
+from tqdm import tqdm
 
 
 matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
 
-def shuffle_batch(batch, shuffle_strategy, device: str="cuda"):
-    assert shuffle_strategy in {"random"}, "Invalid context shuffle strategy"
+def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
+    assert shuffle_strategy in {"random", "GreedyBestPrior", "GreedyWorstPrior", "GreedyMedianPrior"}, "Invalid context shuffle strategy"
     m, nc, dx = batch.xc.shape
     _, nt, dy = batch.yt.shape
-    batch_new = None
+    # Converts batch to cuda
+    batch.xc, batch.yc, batch.xt, batch.yt, batch.x, batch.y = batch.xc.to(device), batch.yc.to(device), batch.xt.to(device), batch.yt.to(device), batch.x.to(device), batch.y.to(device)
+    xc_new, yc_new = None, None
     if shuffle_strategy == "random":
         perms = torch.rand(m, nc, device=batch.xc.device).argsort(dim=1)
-        perm_x = perms.unsqueeze(-1).expand(-1, -1, dx) 
+        perm_x = perms.unsqueeze(-1).expand(-1, -1, dx)
         perm_y = perms.unsqueeze(-1).expand(-1, -1, dy)
-        xc_shuffled = torch.gather(batch.xc, 1, perm_x) 
-        yc_shuffled = torch.gather(batch.yc, 1, perm_y)
-        x = torch.cat((xc_shuffled, batch.xt), dim=1)
-        y = torch.cat((yc_shuffled, batch.yt), dim=1)
-        batch_new = Batch(xc=xc_shuffled, yc=yc_shuffled, xt=batch.xt, yt=batch.yt, y=y, x=x)
+        xc_new = torch.gather(batch.xc, 1, perm_x) 
+        yc_new = torch.gather(batch.yc, 1, perm_y)
+    elif shuffle_strategy == "GreedyBestPrior":
+        xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best")
+    elif shuffle_strategy == "GreedyWorstPrior":
+        xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="worst")
+    elif shuffle_strategy == "GreedyMedianPrior":
+        xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="median")
     
-    # Converts batch to cuda
-    batch_new.xc, batch_new.yc, batch_new.xt, batch_new.yt, batch_new.x, batch_new.y = batch_new.xc.to(device), batch_new.yc.to(device), batch_new.xt.to(device), batch_new.yt.to(device), batch_new.x.to(device), batch_new.y.to(device)
+    x = torch.cat((xc_new, batch.xt), dim=1)
+    y = torch.cat((yc_new, batch.yt), dim=1)
+    batch_new = Batch(xc=xc_new, yc=yc_new, xt=batch.xt, yt=batch.yt, y=y, x=x)
     return batch_new
 
 
@@ -66,9 +73,9 @@ def shuffle_batch(batch, shuffle_strategy, device: str="cuda"):
 @torch.no_grad
 def eval_model(model, test_set, shuffle_strategy):
     log_liks, rmse_vals, gt_log_liks = [], [], []
-    for batch_test in test_set:
+    for batch_test in tqdm(test_set, desc="Evaluating Model on One Train Set"):
         # Shuffles data using defined permute strategy
-        batch = shuffle_batch(batch_test, shuffle_strategy)
+        batch = shuffle_batch(model, batch_test, shuffle_strategy)
         # Model LL and rmse
         m, nt, _ = batch.yt.shape
         # Gets predictive distribution from model
@@ -103,7 +110,7 @@ def eval_model_over_permutations(model, test_set, no_reps: int = 1, shuffle_stra
     model.eval()
     num_params = sum(p.numel() for p in model.parameters())
     mean_lls, std_lls, mean_rmse_vals, std_rmse_vals, mean_gt_lls, std_gt_lls = [], [], [], [], [], []
-    for _ in range(no_reps):
+    for _ in tqdm(range(no_reps), desc="Evaluating model over multiple test sets"):
         result = eval_model(model, test_set, shuffle_strategy)
         mean_lls.append(result["mean_ll"])
         std_lls.append(result["std_ll"])
@@ -153,9 +160,10 @@ def get_rbf_rangesame_test_set():
 def models_perf_main(model_list, test_set, no_reps):
     folder_name = "experiments/plot_results/eval_set/"
     txt_file_summary = f'Summary over eval data set (likely rbf rangesame) with {no_reps} reps'
-    for (yml_path, wandb_id, shuffle_strategy, model_name, special_args) in model_list:
+    for (yml_path, wandb_id, shuffle_strategy, model_name, special_args) in tqdm(model_list, desc="Looping over models"):
         model = get_model(yml_path, wandb_id, seed=False) # Loads model
-        assert special_args in {""}, "Invalid special model arguments"
+        if special_args.startswith("TNPAR_"):
+            model.num_samples = int(special_args.split("_")[1])
         results = eval_model_over_permutations(model, test_set, no_reps, shuffle_strategy)
 
         summary_block = f"""
@@ -175,16 +183,43 @@ def models_perf_main(model_list, test_set, no_reps):
 
 # List of models to be tested, adjust this as required
 def get_model_list():
-    # List of models
+    # Models available
     tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 
         'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', 'random', "TNP-D", "")
+    tnp_causal = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', 'random', "IncTNP", "")
+    tnp_causal_batched = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'random', "IncTNP (Batched)", "")
+    tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'random', "IncTNP-Prior (Batched)", "")
+    # TNP Causal Batched Prior Greedy Strategies
+    greedy_best_tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyBestPrior', 
+        "IncTNP-Prior (Batched) - Best Greedy", "")
+    greedy_worst_tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyWorstPrior', 
+        "IncTNP-Prior (Batched) - Worst","") 
+    greedy_median_tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyMedianPrior', 
+        "IncTNP-Prior (Batched) - Best Median", "")
+    # TNP AR models
+    ar_yml, ar_mod, name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
+    tnp_ar_5 = (ar_yml, ar_mod, 'random', name + " (5)", "TNPAR_5")
+    tnp_ar_50 = (ar_yml, ar_mod, 'random', name + " (50)", "TNPAR_50")
+    tnp_ar_100 = (ar_yml, ar_mod, 'random', name + " (100)", "TNPAR_100")
     
     # Defines models to be used
-    models = [tnp_plain]
+    models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
+        greedy_best_tnp_causal_batched_prior, greedy_worst_tnp_causal_batched_prior, greedy_median_tnp_causal_batched_prior,
+        tnp_ar_5, tnp_ar_50, tnp_ar_100]
+
+    models = [tnp_ar_5, tnp_ar_50]
     return models
 
 if __name__ == "__main__":
+    start_t = time.time()
     pl.seed_everything(1) #  Sets seed of randomness for reproducibility
-    no_reps = 2 # Number of repititions to aggregate performance over
+    no_reps = 1 # Number of repititions to aggregate performance over
     models_perf_main(get_model_list(), get_rbf_rangesame_test_set(), no_reps=no_reps)
+    print(f'Runtime: {time.time()-start_t:.2f}s')
     

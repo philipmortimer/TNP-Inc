@@ -131,3 +131,52 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
         likelihood: nn.Module,
     ):
         super().__init__(encoder, decoder, likelihood)
+
+    # Greedy Context ordering algorithm. Note it is incremental (so given an initial context set + a number of new ctx points it can pick the best order)
+    # This approach assumes we already have all context points.
+    @check_shapes(
+    "xc: [m, nc, dx]", "yc: [m, nc, dy]"
+    )
+    @torch.no_grad()
+    def greedy_variance_ctx_builder(self, xc: torch.Tensor, yc: torch.Tensor, policy: str = "best"):
+        assert policy in {"best", "worst", "median"}, "Invalid policy"
+        device = xc.device
+        # When deciding the context set ordering, start with an empty context set and build up greedily (or according to some shallow strategy)
+        _, _, dx = xc.shape
+        m, nc, dy = yc.shape
+
+        # Tracks which context points have been picked
+        picked_mask = torch.zeros(m, nc, dtype=torch.bool, device=device) # Stores whether a context point has been picked
+
+        # Incrementally builds up representation
+        batch_idx = torch.arange(m, device=device)
+        xc_new, yc_new = torch.empty((m, 0, dx), device=xc.device), torch.empty((m, 0, dy), device=yc.device)
+        for step in range(nc):
+            # Gathers all unpicked points into a call (vectorised / batch together for speed)
+            not_picked_idx = (~picked_mask).nonzero(as_tuple=False)
+            n_remaining = nc - step
+            idx_remaining = not_picked_idx[:, 1].reshape(m, n_remaining) # [m, n_remaining]
+            xt_candidates = xc[batch_idx.unsqueeze(1), idx_remaining] # [m, n_remaining, dx]
+            yt_candidates = yc[batch_idx.unsqueeze(1), idx_remaining]
+
+            # Runs inference
+            pred_dist = self.likelihood(self.decoder(self.encoder(xc=xc_new, yc=yc_new, xt=xt_candidates), xt_candidates)) # [m, n_remaining, dy] 
+            #var = pred_dist.variance.mean(-1) # [m, n_remaining]
+            var = (pred_dist.log_prob(yt_candidates).sum(dim=(-1)) / (n_remaining * dy))
+
+
+            # Selection strategy
+            if policy == "best": selected_points = var.argmax(dim=1) # [m]
+            elif policy == "worst": selected_points = var.argmin(dim=1) # [m]
+            else: selected_points = var.kthvalue(k=(n_remaining // 2) + 1, dim=1)[1] # [m] - median
+
+            # Selects points per batch
+            selected_points_global = idx_remaining[batch_idx, selected_points] # [m]
+
+            # Updates context representation
+            added_xc = xc[batch_idx, selected_points_global].unsqueeze(1)
+            added_yc = yc[batch_idx, selected_points_global].unsqueeze(1)
+            xc_new = torch.cat([xc_new, added_xc], dim=1)
+            yc_new = torch.cat([yc_new, added_yc], dim=1)
+            picked_mask[batch_idx, selected_points_global] = True # Shows that point has been picked
+        return xc_new, yc_new
