@@ -453,7 +453,7 @@ def greedy_selection_strats(masked_model, xc: torch.Tensor, yc: torch.Tensor, xt
 def greedy_variance_ctx_builder(masked_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor,
     policy: str = "best", device: str="cuda") -> Tuple[torch.LongTensor, torch.Tensor]:
     assert policy in {"best", "worst", "median"}, "Invalid policy"
-    assert isinstance(masked_model, IncTNPBatchedPrior), "Only supports specific zero prioir conditioned model atm"
+    #assert isinstance(masked_model, IncTNPBatchedPrior), "Only supports specific zero prioir conditioned model atm"
 
     xc, yc, xt, yt = xc.to(device), yc.to(device), xt.to(device), yt.to(device)
     # When deciding the context set ordering, start with an empty context set and build up greedily (or according to some shallow strategy)
@@ -580,7 +580,7 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     plot_log_p_lines([(inc_vars_best, "Best Greedy-V"), (inc_vars_median, "Median Greedy-V"), (inc_vars_worst, "Worst Greedy-V")], f"{folder_path}/vargreedy_lines_{file_id}", yt.shape[1])
 
 
-def get_model(config_path, weights_and_bias_ref, device='cuda'):
+def get_model(config_path, weights_and_bias_ref, device='cuda', seed: bool = True):
     raw_config = deep_convert_dict(
         hiyapyco.load(
             config_path,
@@ -594,10 +594,10 @@ def get_model(config_path, weights_and_bias_ref, device='cuda'):
     config = deep_convert_dict(config)
 
     # Instantiate experiment and load checkpoint.
-    pl.seed_everything(config.misc.seed)
+    if seed: pl.seed_everything(config.misc.seed)
     experiment = instantiate(config)
     experiment.config = config
-    pl.seed_everything(experiment.misc.seed)
+    if seed: pl.seed_everything(experiment.misc.seed)
 
     # Loads weights and bias model
     artifact = wandb.Api().artifact(weights_and_bias_ref, type='model')
@@ -641,13 +641,13 @@ if __name__ == "__main__":
         'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200')
     plain_model.eval()
 
-    #masked_model = get_model('experiments/configs/synthetic1dRBF/gp_causal_tnp.yml', 
-    #    'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200')
-    #masked_model.eval()
-
-    masked_model = get_model('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v150')
+    masked_model = get_model('experiments/configs/synthetic1dRBF/gp_causal_tnp.yml', 
+        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200')
     masked_model.eval()
+
+    #masked_model = get_model('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
+    #    'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v180')
+    #masked_model.eval()
 
     # Sorts context in order
     xc = data.xc
