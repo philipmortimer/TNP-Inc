@@ -48,26 +48,39 @@ class IncTNPBatchedEncoderPrior(nn.Module):
         else: return self.predict_encoder(xc, yc , xt)
 
     @check_shapes(
+        "xc: [m, nc, dx]", "yc: [m, nc, dy]", "return: [m, nc, dz]"
+    )
+    def _preprocess_context(self, xc: torch.Tensor, yc:torch.Tensor):
+        yc = torch.cat((yc, torch.zeros(yc.shape[:-1] + (1,)).to(yc)), dim=-1) # Adds flag
+        xc_encoded = self.x_encoder(xc)
+        yc_encoded = self.y_encoder(yc)
+        zc = torch.cat((xc_encoded, yc_encoded), dim=-1)
+        return self.xy_encoder(zc)
+
+    @check_shapes(
+        "xt: [m, nt, dx]", "return: [m, nt, dz]"
+    )
+    def _preprocess_targets(self, xt: torch.Tensor, dy: int):
+        m, nt, _ = xt.shape
+        # Creates yt of zeros plus a bool flag
+        yt = torch.zeros(m, nt, dy).to(xt)
+        yt = torch.cat((yt, torch.ones(yt.shape[:-1] + (1,)).to(yt)), dim=-1)
+        # Encodes
+        xt_encoded = self.x_encoder(xt)
+        yt_encoded = self.y_encoder(yt)
+        zt = torch.cat((xt_encoded, yt_encoded), dim=-1)
+        return self.xy_encoder(zt)
+
+
+    @check_shapes(
         "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "return: [m, n, dz]"
     )
     def predict_encoder(self, xc: torch.Tensor, yc:torch.Tensor, xt:torch.Tensor):
         # At prediction time we essentially become identically to incTNP basic
         # (I.e.) just self attention over the context points and no cross attention mask.
         m, nc, _ = xc.shape
-        yc, yt = preprocess_observations(xt, yc)
-
-        x = torch.cat((xc, xt), dim=1)
-        x_encoded = self.x_encoder(x)
-        xc_encoded, xt_encoded = x_encoded.split((xc.shape[1], xt.shape[1]), dim=1)
-
-        y = torch.cat((yc, yt), dim=1)
-        y_encoded = self.y_encoder(y)
-        yc_encoded, yt_encoded = y_encoded.split((yc.shape[1], yt.shape[1]), dim=1)
-
-        zc = torch.cat((xc_encoded, yc_encoded), dim=-1)
-        zt = torch.cat((xt_encoded, yt_encoded), dim=-1)
-        zc = self.xy_encoder(zc)
-        zt = self.xy_encoder(zt)
+        zc = self._preprocess_context(xc, yc)
+        zt = self._preprocess_targets(xt, yc.shape[2])
 
         # Adds dummy start token to zc
         start_token = self.empty_token.expand(m, -1, -1)
@@ -78,7 +91,27 @@ class IncTNPBatchedEncoderPrior(nn.Module):
 
         zt = self.transformer_encoder(zc, zt, mask_sa=mask_sa, mask_ca=None)
         
-        return zt       
+        return zt
+
+    # Incrementally updates context using kv caching. Essentially just the SA branch.
+    @check_shapes(
+        "zc_old: [m, nc_old, dz]", "zc_new: [m, nc_new, dz]", "return: [m, nc_old_plus_mc_new, dz]"
+    )
+    def update_context(self, zc_old: torch.Tensor, zc_new: torch.Tensor, kv_cache: dict) -> torch.Tensor:
+        m, nc_new, _ = zc_new.shape
+        mask_sa = torch.tril(torch.ones(nc_new, nc_new, dtype=torch.bool, device=zc_new.device), diagonal=0)
+        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, nc_new, nc_new]
+        zc_updated = self.transformer_encoder.encode_context(zc_new, mask_sa=mask_sa, kv_cache=kv_cache)
+        zc_combined = torch.cat((zc_old, zc_updated), dim=1)
+        return zc_combined
+
+    # Once the context has been conditioned on, this is used to run predictions. Essentially just the CA branch.
+    @check_shapes(
+        "zc: [m, nc, dz]", "zt: [m, nt, dz]", "return: [m, nt, dz]"
+    )
+    def query(self, zc: torch.Tensor, zt: torch.Tensor, ) -> torch.Tensor:
+        return self.transformer_encoder.query(zc, zt)
+
 
 
     @check_shapes(
@@ -131,6 +164,64 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
         likelihood: nn.Module,
     ):
         super().__init__(encoder, decoder, likelihood)
+
+    # Greedy Context ordering algorithm using KV caching. Note it is incremental (so given an initial context set + a number of new ctx points it can pick the best order)
+    # This approach assumes we already have all context points.
+    @check_shapes(
+    "xc: [m, nc, dx]", "yc: [m, nc, dy]"
+    )
+    @torch.no_grad()
+    def kv_cached_greedy_variance_ctx_builder(self, xc: torch.Tensor, yc: torch.Tensor, policy: str = "best"):
+        assert policy in {"best", "worst", "median"}, "Invalid policy"
+        device = xc.device
+        # When deciding the context set ordering, start with an empty context set and build up greedily (or according to some shallow strategy)
+        _, _, dx = xc.shape
+        m, nc, dy = yc.shape
+
+        # Tracks which context points have been picked
+        picked_mask = torch.zeros(m, nc, dtype=torch.bool, device=device) # Stores whether a context point has been picked
+
+        kv_cache = {} # Starts with an empty KV cache
+        zc = self.encoder.empty_token.expand(m, -1, -1) # Starts with empty token (prior condition)
+        dz = zc.shape[2]
+        zc = self.encoder.update_context(torch.empty(m, 0, dz).to(xc), zc, kv_cache)
+
+        # Incrementally builds up representation
+        batch_idx = torch.arange(m, device=device)
+        ordered_indices = torch.full((m, nc), -1, dtype=torch.long, device=device)
+        for step in range(nc):
+            # Gathers all unpicked points into a call (vectorised / batch together for speed)
+            not_picked_idx = (~picked_mask).nonzero(as_tuple=False)
+            n_remaining = nc - step
+            idx_remaining = not_picked_idx[:, 1].reshape(m, n_remaining) # [m, n_remaining]
+            xt_candidates = xc[batch_idx.unsqueeze(1), idx_remaining] # [m, n_remaining, dx]
+            yt_candidates = yc[batch_idx.unsqueeze(1), idx_remaining]
+
+            # Query - performs inference on already conditioned context
+            zt_candidates = self.encoder._preprocess_targets(xt_candidates, dy)
+            pred_dist = self.likelihood(self.decoder(self.encoder.query(zc, zt_candidates), xt_candidates)) # [m, n_remaining, dy] 
+            var = (pred_dist.log_prob(yt_candidates).sum(dim=(-1)) / (n_remaining * dy))
+            #var = pred_dist.variance.mean(-1) # [m, n_remaining]
+
+            # Selection strategy
+            if policy == "best": selected_points = var.argmax(dim=1) # [m]
+            elif policy == "worst": selected_points = var.argmin(dim=1) # [m]
+            else: selected_points = var.kthvalue(k=(n_remaining // 2) + 1, dim=1)[1] # [m] - median
+
+            # Selects points per batch
+            selected_points_global = idx_remaining[batch_idx, selected_points] # [m]
+            picked_mask[batch_idx, selected_points_global] = True # Shows that point has been picked
+            ordered_indices[:, step] = selected_points_global
+
+            # Updates context representation
+            added_xc = xc[batch_idx, selected_points_global].unsqueeze(1)
+            added_yc = yc[batch_idx, selected_points_global].unsqueeze(1)
+            new_zc = self.encoder._preprocess_context(added_xc, added_yc)
+            zc = self.encoder.update_context(new_zc, zc, kv_cache)
+        xc_new = xc[batch_idx.unsqueeze(1), ordered_indices]
+        yc_new = yc[batch_idx.unsqueeze(1), ordered_indices]
+
+        return xc_new, yc_new
 
     # Greedy Context ordering algorithm. Note it is incremental (so given an initial context set + a number of new ctx points it can pick the best order)
     # This approach assumes we already have all context points.

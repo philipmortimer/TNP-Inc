@@ -5,6 +5,7 @@ import einops
 import torch
 from check_shapes import check_shapes
 from torch import nn
+from .kv_cache import update_kv_cache
 
 
 class BaseMultiHeadAttention(nn.Module, ABC):
@@ -51,15 +52,22 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         xk: torch.Tensor,
         xv: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
+        kv_cache: Optional[dict] = None, # Stores cached KV values if being used
+        kv_tag: Optional[str] = None # Layer ID to look up in kv_cache
     ) -> torch.Tensor:
         q = self.to_q(xq)
-        k = self.to_k(xk)
-        v = self.to_v(xv)
+        k_new = self.to_k(xk)
+        v_new = self.to_v(xv)
 
-        q, k, v = map(
+        q, k_new, v_new = map(
             lambda x: einops.rearrange(x, "m n (h d) -> m h n d", h=self.num_heads),
-            (q, k, v),
+            (q, k_new, v_new),
         )
+
+        if kv_tag is None: # KV caching not used if no tag provided
+            k, v = k_new, v_new
+        else:
+            k, v = update_kv_cache(k_new, v_new, kv_cache, kv_tag)
 
         if mask is not None:
             # Shape goes from [m, nq, nkv] -> [m, h, nq, nkv] by only changing view (no new memory allocated)
@@ -110,8 +118,10 @@ class MultiHeadSelfAttention(BaseMultiHeadAttention):
         self,
         x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
+        kv_cache: Optional[dict] = None,
+        kv_tag: Optional[str] = None,
     ) -> torch.Tensor:
-        return super().propagate(x, x, x, mask)
+        return super().propagate(x, x, x, mask, kv_cache=kv_cache, kv_tag=kv_tag)
 
 
 class MultiHeadCrossAttention(BaseMultiHeadAttention):

@@ -57,7 +57,8 @@ def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
         xc_new = torch.gather(batch.xc, 1, perm_x) 
         yc_new = torch.gather(batch.yc, 1, perm_y)
     elif shuffle_strategy == "GreedyBestPrior":
-        xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best")
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best")
+        #xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best")
     elif shuffle_strategy == "GreedyWorstPrior":
         xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="worst")
     elif shuffle_strategy == "GreedyMedianPrior":
@@ -154,13 +155,14 @@ def get_rbf_rangesame_test_set():
         context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=noise_std,
         deterministic=deterministic, kernel=kernels)
     test_set = [batch for batch in gen_test]
-    return test_set
+    return test_set, "RBF"
 
 # Main function used to handle flow of evaluating model and plotting the results
-def models_perf_main(model_list, test_set, no_reps):
+def models_perf_main(model_list, test_data):
+    test_set, test_data_name = test_data
     folder_name = "experiments/plot_results/eval_set/"
-    txt_file_summary = f'Summary over eval data set (likely rbf rangesame) with {no_reps} reps'
-    for (yml_path, wandb_id, shuffle_strategy, model_name, special_args) in model_list:
+    txt_file_summary = f'Summary over eval data set {test_data_name}'
+    for (yml_path, wandb_id, shuffle_strategy, model_name, special_args, no_reps) in model_list:
         model = get_model(yml_path, wandb_id, seed=False) # Loads model
         if special_args.startswith("TNPAR_"):
             model.num_samples = int(special_args.split("_")[1])
@@ -186,39 +188,46 @@ def models_perf_main(model_list, test_set, no_reps):
 def get_model_list():
     # Models available
     tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 
-        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', 'random', "TNP-D", "")
+        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', 'random', "TNP-D", "",
+        1)
     tnp_causal = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
-        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', 'random', "IncTNP", "")
+        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', 'random', "IncTNP", "",
+        1)
     tnp_causal_batched = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 
-        'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'random', "IncTNP (Batched)", "")
+        'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'random', "IncTNP (Batched)", "",
+        1)
     tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'random', "IncTNP-Prior (Batched)", "")
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'random', "IncTNP-Prior (Batched)", "",
+        1)
     # TNP Causal Batched Prior Greedy Strategies
     greedy_best_tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyBestPrior', 
-        "IncTNP-Prior (Batched) - Best Greedy", "")
+        "IncTNP-Prior (Batched) - Best Greedy", "",
+        1)
     greedy_worst_tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyWorstPrior', 
-        "IncTNP-Prior (Batched) - Worst","") 
+        "IncTNP-Prior (Batched) - Worst","",
+        1) 
     greedy_median_tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyMedianPrior', 
-        "IncTNP-Prior (Batched) - Best Median", "")
+        "IncTNP-Prior (Batched) - Best Median", "",
+        1)
     # TNP AR models
     ar_yml, ar_mod, name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
-    tnp_ar_5 = (ar_yml, ar_mod, 'random', name + " (5)", "TNPAR_5")
-    tnp_ar_50 = (ar_yml, ar_mod, 'random', name + " (50)", "TNPAR_50")
-    tnp_ar_100 = (ar_yml, ar_mod, 'random', name + " (100)", "TNPAR_100")
+    tnp_ar_5 = (ar_yml, ar_mod, 'random', name + " (5)", "TNPAR_5", 2)
+    tnp_ar_50 = (ar_yml, ar_mod, 'random', name + " (50)", "TNPAR_50", 2)
+    tnp_ar_100 = (ar_yml, ar_mod, 'random', name + " (100)", "TNPAR_100", 2)
     
     # Defines models to be used
     models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
         greedy_best_tnp_causal_batched_prior, greedy_worst_tnp_causal_batched_prior, greedy_median_tnp_causal_batched_prior,
         tnp_ar_5, tnp_ar_50, tnp_ar_100]
+    models = [greedy_best_tnp_causal_batched_prior]
     return models
 
 if __name__ == "__main__":
     start_t = time.time()
     pl.seed_everything(1) #  Sets seed of randomness for reproducibility
-    no_reps = 100 # Number of repititions to aggregate performance over
-    models_perf_main(get_model_list(), get_rbf_rangesame_test_set(), no_reps=no_reps)
+    models_perf_main(get_model_list(), get_rbf_rangesame_test_set())
     print(f'Runtime: {time.time()-start_t:.2f}s')
     

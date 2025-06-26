@@ -1,11 +1,21 @@
-Summary over eval data set (likely rbf rangesame) with 1 reps
+Summary over eval data set RBF
         ----------------------------
-        Model: TNP-D
-        Params: 1058818
-        Mean_LLs: [0.3183174978767056]
-        Std_LLs: [0.48021759840113554]
-        Mean_RMSEs: [0.24145426898030564]
-        Std_RMSEs: [0.19331681147840457]
-        Mean_GT_LLs: [0.45899641185587825]
-        Std_GT_LLs: [0.47341105580539544]
+        Model: IncTNP-Prior (Batched)
+        Params: 1058946
+        Mean_LLs: [0.3901527865746175]
+        Std_LLs: [0.49887590311744856]
+        Mean_RMSEs: [0.23277233928092755]
+        Std_RMSEs: [0.19532845875273638]
+        Mean_GT_LLs: [0.4589964161896205]
+        Std_GT_LLs: [0.47341103648407157]
+        
+        ----------------------------
+        Model: IncTNP-Prior (Batched) - Best Greedy
+        Params: 1058946
+        Mean_LLs: [0.379262066737283]
+        Std_LLs: [0.49539266097474827]
+        Mean_RMSEs: [0.23565000694361515]
+        Std_RMSEs: [0.1949867825504052]
+        Mean_GT_LLs: [0.45899641843243444]
+        Std_GT_LLs: [0.473411031540293]
         

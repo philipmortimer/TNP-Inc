@@ -106,19 +106,21 @@ class MultiHeadSelfAttentionLayer(BaseMultiHeadAttentionLayer):
         self,
         x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
+        kv_cache: Optional[dict] = None,
+        kv_tag: Optional[str] = None,
     ) -> torch.Tensor:
-        x = self.attn(x, mask=mask)
+        x = self.attn(x, mask=mask, kv_cache=kv_cache, kv_tag=kv_tag)
         return self.attn_dropout(x)
 
     @check_shapes("x: [m, n, d]", "mask: [m, n, n]", "return: [m, n, d]")
     def forward(
-        self, x: torch.Tensor, mask: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, mask: Optional[torch.Tensor] = None, kv_cache: Optional[dict] = None, kv_tag: Optional[str] = None,
     ) -> torch.Tensor:
         if self.norm_first:
-            x = x + self.attn_block(self.norm1(x), mask)
+            x = x + self.attn_block(self.norm1(x), mask, kv_cache=kv_cache, kv_tag=kv_tag)
             x = x + self.ff_block(self.norm2(x))
         else:
-            x = self.norm1(x + self.attn_block(x, mask))
+            x = self.norm1(x + self.attn_block(x, mask, kv_cache=kv_cache, kv_tag=kv_tag))
             x = self.norm2(x + self.ff_block(x))
 
         return x
@@ -145,7 +147,7 @@ class MultiHeadCrossAttentionLayer(BaseMultiHeadAttentionLayer):
         "xq: [m, nq, d]", "xkv: [m, nkv, d]", "mask: [m, nq, nkv]", "return: [m, n, d]"
     )
     def forward(
-        self, xq: torch.Tensor, xkv: torch.Tensor, mask: Optional[torch.Tensor] = None
+        self, xq: torch.Tensor, xkv: torch.Tensor, mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.norm_first:
             xq = xq + self.attn_block(self.norm1(xq), self.norm1(xkv), mask)

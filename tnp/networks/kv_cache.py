@@ -11,8 +11,8 @@ def update_kv_cache(k_new, v_new, cache: Optional[dict], cache_id):
         k_updated, v_updated = k_new, v_new # Layer has not yet been cached (first item in seq) so return k and v
     else:
         # Adds k and v to cache history
-        k_updated = torch.cat((k_curr, k_new), dim=2) #[B, H, L, Dk]
-        v_updated = torch.cat((v_curr, v_new), dim=2) #[B, H, L, Dv]
+        k_updated = torch.cat((k_curr, k_new), dim=2) # [B, H, L, Dk]
+        v_updated = torch.cat((v_curr, v_new), dim=2) # [B, H, L, Dv]
     cache[cache_id] = (k_updated, v_updated) # Updates cache
     return k_updated, v_updated
 

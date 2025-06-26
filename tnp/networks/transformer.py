@@ -78,29 +78,25 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
         self,
         num_layers: int,
         mhca_layer: MultiHeadCrossAttentionLayer,
-        mhsa_layer: Optional[MultiHeadSelfAttentionLayer] = None,
+        mhsa_layer: MultiHeadSelfAttentionLayer,
     ):
         super().__init__()
 
         self.mhca_layers = _get_clones(mhca_layer, num_layers)
-        self.mhsa_layers = (
-            self.mhca_layers
-            if mhsa_layer is None
-            else _get_clones(mhsa_layer, num_layers)
-        )
+        self.mhsa_layers = _get_clones(mhsa_layer, num_layers)
 
     @check_shapes(
         "xc: [m, nc, d]", "xt: [m, nt, d]", "mask_sa: [m, nc, nc]", "mask_ca: [m, nt, nc]", "return: [m, nt, d]"
     )
     def forward(
-        self, xc: torch.Tensor, xt: torch.Tensor, mask_sa: Optional[torch.Tensor] = None, mask_ca: Optional[torch.Tensor] = None
+        self, xc: torch.Tensor, xt: torch.Tensor, mask_sa: Optional[torch.Tensor] = None, mask_ca: Optional[torch.Tensor] = None,
+        kv_cache: Optional[dict] = None,
     ) -> torch.Tensor:
 
-        for mhsa_layer, mhca_layer in zip(self.mhsa_layers, self.mhca_layers):
+        for i, (mhsa_layer, mhca_layer) in enumerate(zip(self.mhsa_layers, self.mhca_layers)):
+            self_attention_layer_tag = f"layer_{i}_sa" # Layer tag for KV
             if isinstance(mhsa_layer, MultiHeadSelfAttentionLayer):
-                xc = mhsa_layer(xc, mask=mask_sa)
-            elif isinstance(mhsa_layer, MultiHeadCrossAttentionLayer):
-                xc = mhsa_layer(xc, xc, mask=mask_sa)
+                xc = mhsa_layer(xc, mask=mask_sa, kv_cache=kv_cache, kv_tag=self_attention_layer_tag)
             else:
                 raise TypeError("Unknown layer type.")
 
@@ -108,13 +104,33 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
 
         return xt
 
+    # Computes the MHSA representation with causal plus kv
+    @check_shapes(
+        "zc_new: [m, nc_new, dz]", "mask_sa: [m, nc_new, nc_new]", "return: [m, nc_new, dz]"
+    )
+    def encode_context(self, zc_new: torch.Tensor, mask_sa: torch.Tensor, kv_cache: dict) -> torch.Tensor:
+        for i, mhsa_layer in enumerate(self.mhsa_layers):
+            self_attention_layer_tag = f"layer_{i}_sa" # Layer tag for KV
+            zc_new = mhsa_layer(zc_new, mask=mask_sa, kv_cache=kv_cache, kv_tag=self_attention_layer_tag)
+        return zc_new
+
+    # Query - runs MHCA pathway assuming MHSA attention has already been computed
+    @check_shapes(
+        "zc: [m, nc, dz]", "zt: [m, nt, dz]", "return: [m, nt, dz]"
+    )
+    def query(self, zc, zt) -> torch.Tensor:
+        for mhca_layer in self.mhca_layers:
+            zt = mhca_layer(zt, zc)
+        return zt
+
+
 # TNPTransformerEncoder but the mask is applied to the context (ie only the self attention)
 class TNPTransformerMaskedEncoder(nn.Module):
     def __init__(
         self,
         num_layers: int,
         mhca_layer: MultiHeadCrossAttentionLayer,
-        mhsa_layer: Optional[MultiHeadSelfAttentionLayer] = None,
+        mhsa_layer: MultiHeadSelfAttentionLayer,
     ):
         super().__init__()
 
