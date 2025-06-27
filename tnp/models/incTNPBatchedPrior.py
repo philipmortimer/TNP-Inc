@@ -10,6 +10,7 @@ from ..utils.helpers import preprocess_observations
 from .base import BatchedCausalTNPPrior
 from .tnp import TNPDecoder
 from ..utils.helpers import preprocess_observations
+from ..networks.kv_cache import init_kv_cache
 
 
 class IncTNPBatchedEncoderPrior(nn.Module):
@@ -96,20 +97,19 @@ class IncTNPBatchedEncoderPrior(nn.Module):
 
     # Incrementally updates context using kv caching. Essentially just the SA branch.
     @check_shapes(
-        "zc_old: [L, m, nc_old, dz]", "zc_new: [m, nc_new, dz]", "return: [L , m, nc_old_plus_mc_new, dz]"
+        "zc_new: [m, nc_new, dz]", "mask_sa_big: [m, nc_max, dz]"
     )
-    def update_context(self, zc_old: torch.Tensor, zc_new: torch.Tensor, kv_cache: dict) -> torch.Tensor:
-        # Create attention mask
-        zc_updated = self.transformer_encoder.encode_context(zc_new, kv_cache=kv_cache, use_causal=True)
-        zc_combined = torch.cat((zc_old, zc_updated), dim=2)
-        return zc_combined
+    def update_context(self, zc_new: torch.Tensor, kv_cache: dict, mask_sa_big: Optional[torch.Tensor] = None) -> torch.Tensor:
+        use_causal = mask_sa_big is None
+        mask_sa = mask_sa_big[:, -len(zc_new):, :]
+        zc_updated = self.transformer_encoder.encode_context(zc_new, kv_cache=kv_cache, use_causal=use_causal, mask_sa=mask_sa)
 
     # Once the context has been conditioned on, this is used to run predictions. Essentially just the CA branch.
     @check_shapes(
-        "zc: [L, m, nc, dz]", "zt: [m, nt, dz]", "return: [m, nt, dz]"
+        "zt: [m, nt, dz]", "return: [m, nt, dz]"
     )
-    def query(self, zc: torch.Tensor, zt: torch.Tensor, ) -> torch.Tensor:
-        return self.transformer_encoder.query(zc, zt)
+    def query(self, zt: torch.Tensor, kv_cache: dict) -> torch.Tensor:
+        return self.transformer_encoder.query(zt, kv_cache)
 
     @check_shapes(
         "x: [m, n, dx]", "y: [m, n, dy]","return: [m, n_minus_one, dz]"
@@ -178,11 +178,20 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
         # Tracks which context points have been picked
         picked_mask = torch.zeros(m, nc, dtype=torch.bool, device=device) # Stores whether a context point has been picked
 
-        kv_cache = {} # Starts with an empty KV cache
+        # Creates one big SA mask to be sliced each time
+        mask_sa = torch.tril(torch.ones(nc + 1, nc + 1, dtype=torch.bool, device=device))
+        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1)
+
+        # Check the dims work!?!?
+        L = len(self.encoder.transformer_encoder.mhsa_layers)
+        head_dim = int(round(self.encoder.transformer_encoder.mhsa_layers[0].attn.scale ** -2))
+        kv_cache = init_kv_cache(L=L, m=m,
+            k_dim=head_dim,
+            v_dim=head_dim,
+            max_len=nc + 1, no_heads=self.encoder.transformer_encoder.mhsa_layers[0].attn.num_heads, device=device)
         start_token = self.encoder.empty_token.expand(m, -1, -1) # Starts with empty token (prior condition)
         dz = start_token.shape[2]
-        L = len(self.encoder.transformer_encoder.mhsa_layers)
-        zc = self.encoder.update_context(torch.empty(L, m, 0, dz).to(xc), start_token, kv_cache)
+        self.encoder.update_context(start_token, kv_cache, mask_sa_big=mask_sa)
 
         # Incrementally builds up representation
         batch_idx = torch.arange(m, device=device)
@@ -197,7 +206,7 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
 
             # Query - performs inference on already conditioned context
             zt_candidates = self.encoder._preprocess_targets(xt_candidates, dy)
-            pred_dist = self.likelihood(self.decoder(self.encoder.query(zc, zt_candidates), xt_candidates)) # [m, n_remaining, dy] 
+            pred_dist = self.likelihood(self.decoder(self.encoder.query(zt_candidates, kv_cache), xt_candidates)) # [m, n_remaining, dy] 
             var = (pred_dist.log_prob(yt_candidates).sum(dim=(-1)) / (n_remaining * dy))
             #var = pred_dist.variance.mean(-1) # [m, n_remaining]
 
@@ -215,12 +224,12 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
             added_xc = xc[batch_idx, selected_points_global].unsqueeze(1)
             added_yc = yc[batch_idx, selected_points_global].unsqueeze(1)
             new_zc = self.encoder._preprocess_context(added_xc, added_yc)
-            zc = self.encoder.update_context(zc, new_zc, kv_cache)
+            zc = self.encoder.update_context(new_zc, kv_cache, mask_sa_big=mask_sa)
         xc_new = xc[batch_idx.unsqueeze(1), ordered_indices]
         yc_new = yc[batch_idx.unsqueeze(1), ordered_indices]
 
-        kv_cache = {} # Empties cache
         return xc_new, yc_new
+
 
     # Greedy Context ordering algorithm. Note it is incremental (so given an initial context set + a number of new ctx points it can pick the best order)
     # This approach assumes we already have all context points.

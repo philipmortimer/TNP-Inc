@@ -5,13 +5,22 @@ import torch
 def update_kv_cache(k_new, v_new, cache: Optional[dict], cache_id):
     if cache is None: return k_new, v_new # Training - in case of an empty cache, k and v are simply returned
 
-    k_curr, v_curr = cache.get(cache_id, (None, None)) # Gets previously cached k and v values (or (None, None) if layer has not been cached yet)
-    if k_curr is None: 
-        k_updated, v_updated = k_new, v_new # Layer has not yet been cached (first item in seq) so return k and v
-    else:
-        # Adds k and v to cache history
-        k_updated = torch.cat((k_curr, k_new), dim=2)  # [B, H, L, Dk]
-        v_updated = torch.cat((v_curr, v_new), dim=2)  # [B, H, L, Dv]
-    cache[cache_id] = (k_updated, v_updated) # Updates cache
-    return k_updated, v_updated
+    res = cache.get(cache_id, (None, None))
+    k, v, toks_written = cache.get(cache_id, (None, None, None)) # Gets previously cached k and v values (or (None, None) if layer has not been cached yet)
 
+    # Adds k and v to cache history
+    toks_written_new = toks_written + len(k_new)
+    k[:, :, toks_written:toks_written+toks_written_new, :] = k_new
+    v[:, :, toks_written:toks_written+toks_written_new, :] = v_new
+    cache[cache_id] = (k, v, toks_written_new) # Updates cache
+    return k[:, : , :toks_written_new, :], v[:, : , :toks_written_new, :]
+
+# Initialises a KV cache with a max sequence length
+def init_kv_cache(L, m, v_dim, k_dim, max_len, no_heads, device) -> dict:
+    kv_cache = {} # Empty cache
+    for i in range(L):
+        self_attention_layer_tag = f"layer_{i}_sa"
+        k_empty = torch.empty((m, no_heads, max_len, k_dim), device=device)
+        v_empty = torch.empty((m, no_heads, max_len, v_dim), device=device)
+        kv_cache[self_attention_layer_tag] = (k_empty, v_empty, 0)
+    return kv_cache
