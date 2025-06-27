@@ -86,33 +86,30 @@ class IncTNPBatchedEncoderPrior(nn.Module):
         start_token = self.empty_token.expand(m, -1, -1)
         zc = torch.cat((start_token, zc), dim=1)
 
+        # Causal Masking
         mask_sa = torch.tril(torch.ones(nc+1, nc+1, dtype=torch.bool, device=zc.device), diagonal=0)
         mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n + 1, n + 1]
 
-        zt = self.transformer_encoder(zc, zt, mask_sa=mask_sa, mask_ca=None)
+        zt = self.transformer_encoder(zc, zt, mask_ca=None, mask_sa=None, use_causal=True)
         
         return zt
 
     # Incrementally updates context using kv caching. Essentially just the SA branch.
     @check_shapes(
-        "zc_old: [m, nc_old, dz]", "zc_new: [m, nc_new, dz]", "return: [m, nc_old_plus_mc_new, dz]"
+        "zc_old: [L, m, nc_old, dz]", "zc_new: [m, nc_new, dz]", "return: [L , m, nc_old_plus_mc_new, dz]"
     )
     def update_context(self, zc_old: torch.Tensor, zc_new: torch.Tensor, kv_cache: dict) -> torch.Tensor:
-        m, nc_new, _ = zc_new.shape
-        mask_sa = torch.tril(torch.ones(nc_new, nc_new, dtype=torch.bool, device=zc_new.device), diagonal=0)
-        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, nc_new, nc_new]
-        zc_updated = self.transformer_encoder.encode_context(zc_new, mask_sa=mask_sa, kv_cache=kv_cache)
-        zc_combined = torch.cat((zc_old, zc_updated), dim=1)
+        # Create attention mask
+        zc_updated = self.transformer_encoder.encode_context(zc_new, kv_cache=kv_cache, use_causal=True)
+        zc_combined = torch.cat((zc_old, zc_updated), dim=2)
         return zc_combined
 
     # Once the context has been conditioned on, this is used to run predictions. Essentially just the CA branch.
     @check_shapes(
-        "zc: [m, nc, dz]", "zt: [m, nt, dz]", "return: [m, nt, dz]"
+        "zc: [L, m, nc, dz]", "zt: [m, nt, dz]", "return: [m, nt, dz]"
     )
     def query(self, zc: torch.Tensor, zt: torch.Tensor, ) -> torch.Tensor:
         return self.transformer_encoder.query(zc, zt)
-
-
 
     @check_shapes(
         "x: [m, n, dx]", "y: [m, n, dy]","return: [m, n_minus_one, dz]"
@@ -182,9 +179,10 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
         picked_mask = torch.zeros(m, nc, dtype=torch.bool, device=device) # Stores whether a context point has been picked
 
         kv_cache = {} # Starts with an empty KV cache
-        zc = self.encoder.empty_token.expand(m, -1, -1) # Starts with empty token (prior condition)
-        dz = zc.shape[2]
-        zc = self.encoder.update_context(torch.empty(m, 0, dz).to(xc), zc, kv_cache)
+        start_token = self.encoder.empty_token.expand(m, -1, -1) # Starts with empty token (prior condition)
+        dz = start_token.shape[2]
+        L = len(self.encoder.transformer_encoder.mhsa_layers)
+        zc = self.encoder.update_context(torch.empty(L, m, 0, dz).to(xc), start_token, kv_cache)
 
         # Incrementally builds up representation
         batch_idx = torch.arange(m, device=device)
@@ -217,10 +215,11 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
             added_xc = xc[batch_idx, selected_points_global].unsqueeze(1)
             added_yc = yc[batch_idx, selected_points_global].unsqueeze(1)
             new_zc = self.encoder._preprocess_context(added_xc, added_yc)
-            zc = self.encoder.update_context(new_zc, zc, kv_cache)
+            zc = self.encoder.update_context(zc, new_zc, kv_cache)
         xc_new = xc[batch_idx.unsqueeze(1), ordered_indices]
         yc_new = yc[batch_idx.unsqueeze(1), ordered_indices]
 
+        kv_cache = {} # Empties cache
         return xc_new, yc_new
 
     # Greedy Context ordering algorithm. Note it is incremental (so given an initial context set + a number of new ctx points it can pick the best order)

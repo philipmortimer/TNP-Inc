@@ -53,7 +53,8 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         xv: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         kv_cache: Optional[dict] = None, # Stores cached KV values if being used
-        kv_tag: Optional[str] = None # Layer ID to look up in kv_cache
+        kv_tag: Optional[str] = None, # Layer ID to look up in kv_cache,
+        use_causal: bool = False, # Whether to set causal flag in SDPA
     ) -> torch.Tensor:
         q = self.to_q(xq)
         k_new = self.to_k(xk)
@@ -68,6 +69,12 @@ class BaseMultiHeadAttention(nn.Module, ABC):
             k, v = k_new, v_new
         else:
             k, v = update_kv_cache(k_new, v_new, kv_cache, kv_tag)
+            if use_causal:
+                m, _, k_len, _ = k.shape
+                _, _, q_len, _ = q.shape
+                mask = torch.tril(torch.ones(k_len, k_len, dtype=torch.bool, device=k.device))[-q_len:, :]
+                mask = mask.unsqueeze(0).expand(m, -1, -1)
+                use_causal = False
 
         if mask is not None:
             # Shape goes from [m, nq, nkv] -> [m, h, nq, nkv] by only changing view (no new memory allocated)
@@ -78,7 +85,7 @@ class BaseMultiHeadAttention(nn.Module, ABC):
             out = linear_attention(q, k, v, attn_mask=mask, scale=self.scale)
         else:
             out = nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
-                q, k, v, attn_mask=mask, scale=self.scale
+                q, k, v, attn_mask=mask, scale=self.scale, is_causal=use_causal
             )
 
         out = einops.rearrange(out, "m h n d -> m n (h d)")
@@ -120,8 +127,9 @@ class MultiHeadSelfAttention(BaseMultiHeadAttention):
         mask: Optional[torch.Tensor] = None,
         kv_cache: Optional[dict] = None,
         kv_tag: Optional[str] = None,
+        use_causal: bool = False, # Whether to set causal flag in SDPA
     ) -> torch.Tensor:
-        return super().propagate(x, x, x, mask, kv_cache=kv_cache, kv_tag=kv_tag)
+        return super().propagate(x, x, x, mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal)
 
 
 class MultiHeadCrossAttention(BaseMultiHeadAttention):

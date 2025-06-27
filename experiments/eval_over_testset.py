@@ -60,7 +60,7 @@ def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
         xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best")
         #xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best")
     elif shuffle_strategy == "GreedyWorstPrior":
-        xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="worst")
+        xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best")
     elif shuffle_strategy == "GreedyMedianPrior":
         xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="median")
     
@@ -110,9 +110,11 @@ def eval_model(model, test_set, shuffle_strategy):
 def eval_model_over_permutations(model, test_set, no_reps: int = 1, shuffle_strategy: str = "random"):
     model.eval()
     num_params = sum(p.numel() for p in model.parameters())
-    mean_lls, std_lls, mean_rmse_vals, std_rmse_vals, mean_gt_lls, std_gt_lls = [], [], [], [], [], []
+    mean_lls, std_lls, mean_rmse_vals, std_rmse_vals, mean_gt_lls, std_gt_lls, timings = [], [], [], [], [], [], []
     for _ in tqdm(range(no_reps), desc="Evaluating model over multiple test sets"):
+        start_t = time.time()
         result = eval_model(model, test_set, shuffle_strategy)
+        timings.append(time.time() - start_t)
         mean_lls.append(result["mean_ll"])
         std_lls.append(result["std_ll"])
         mean_rmse_vals.append(result["mean_rmse"])
@@ -128,6 +130,7 @@ def eval_model_over_permutations(model, test_set, no_reps: int = 1, shuffle_stra
         "std_rmse_vals": std_rmse_vals,
         "mean_gt_lls": mean_gt_lls,
         "std_gt_lls": std_gt_lls,
+        "time": timings,
     }
     return results
         
@@ -148,6 +151,7 @@ def get_rbf_rangesame_test_set():
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 4096
+    #min_nc, max_nc = 256, 256
     batch_size = 16
     noise_std = 0.1
     deterministic = True
@@ -178,6 +182,7 @@ def models_perf_main(model_list, test_data):
         Std_RMSEs: {results["std_rmse_vals"]}
         Mean_GT_LLs: {results["mean_gt_lls"]}
         Std_GT_LLs: {results["std_gt_lls"]}
+        Times: {results["time"]}
         """
         txt_file_summary += summary_block
         print(summary_block)
@@ -222,7 +227,7 @@ def get_model_list():
     models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
         greedy_best_tnp_causal_batched_prior, greedy_worst_tnp_causal_batched_prior, greedy_median_tnp_causal_batched_prior,
         tnp_ar_5, tnp_ar_50, tnp_ar_100]
-    models = [greedy_best_tnp_causal_batched_prior]
+    models = [greedy_best_tnp_causal_batched_prior, greedy_worst_tnp_causal_batched_prior]
     return models
 
 if __name__ == "__main__":

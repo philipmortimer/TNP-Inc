@@ -90,13 +90,12 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
     )
     def forward(
         self, xc: torch.Tensor, xt: torch.Tensor, mask_sa: Optional[torch.Tensor] = None, mask_ca: Optional[torch.Tensor] = None,
-        kv_cache: Optional[dict] = None,
+        use_causal: bool = False,
     ) -> torch.Tensor:
 
         for i, (mhsa_layer, mhca_layer) in enumerate(zip(self.mhsa_layers, self.mhca_layers)):
-            self_attention_layer_tag = f"layer_{i}_sa" # Layer tag for KV
             if isinstance(mhsa_layer, MultiHeadSelfAttentionLayer):
-                xc = mhsa_layer(xc, mask=mask_sa, kv_cache=kv_cache, kv_tag=self_attention_layer_tag)
+                xc = mhsa_layer(xc, mask=mask_sa, use_causal=use_causal)
             else:
                 raise TypeError("Unknown layer type.")
 
@@ -106,21 +105,26 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
 
     # Computes the MHSA representation with causal plus kv
     @check_shapes(
-        "zc_new: [m, nc_new, dz]", "mask_sa: [m, nc_new, nc_new]", "return: [m, nc_new, dz]"
+        "zc_new: [m, nc_new, dz]", "return: [L, m, nc_new, dz]"
     )
-    def encode_context(self, zc_new: torch.Tensor, mask_sa: torch.Tensor, kv_cache: dict) -> torch.Tensor:
+    def encode_context(self, zc_new: torch.Tensor, kv_cache: dict,
+        use_causal: bool = False,) -> torch.Tensor:
+        L = len(self.mhsa_layers)
+        m, nc_new, dz = zc_new.shape
+        ctx_vals = torch.empty((L, m, nc_new, dz), device=zc_new.device)
         for i, mhsa_layer in enumerate(self.mhsa_layers):
             self_attention_layer_tag = f"layer_{i}_sa" # Layer tag for KV
-            zc_new = mhsa_layer(zc_new, mask=mask_sa, kv_cache=kv_cache, kv_tag=self_attention_layer_tag)
-        return zc_new
+            zc_new = mhsa_layer(zc_new, kv_cache=kv_cache, kv_tag=self_attention_layer_tag, use_causal=use_causal)
+            ctx_vals[i] = zc_new
+        return ctx_vals
 
     # Query - runs MHCA pathway assuming MHSA attention has already been computed
     @check_shapes(
-        "zc: [m, nc, dz]", "zt: [m, nt, dz]", "return: [m, nt, dz]"
+        "ctx: [L, m, nc, dz]", "zt: [m, nt, dz]", "return: [m, nt, dz]"
     )
-    def query(self, zc, zt) -> torch.Tensor:
-        for mhca_layer in self.mhca_layers:
-            zt = mhca_layer(zt, zc)
+    def query(self, ctx, zt) -> torch.Tensor:
+        for i, mhca_layer in enumerate(self.mhca_layers):
+            zt = mhca_layer(zt, ctx[i])
         return zt
 
 
