@@ -87,8 +87,8 @@ class IncTNPBatchedEncoderPrior(nn.Module):
         zc = torch.cat((start_token, zc), dim=1)
 
         # Causal Masking
-        mask_sa = torch.tril(torch.ones(nc+1, nc+1, dtype=torch.bool, device=zc.device), diagonal=0)
-        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n + 1, n + 1]
+        #mask_sa = torch.tril(torch.ones(nc+1, nc+1, dtype=torch.bool, device=zc.device), diagonal=0)
+        #mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n + 1, n + 1]
 
         zt = self.transformer_encoder(zc, zt, mask_ca=None, mask_sa=None, use_causal=True)
         

@@ -69,6 +69,7 @@ class BaseMultiHeadAttention(nn.Module, ABC):
             k, v = k_new, v_new
         else:
             k, v = update_kv_cache(k_new, v_new, kv_cache, kv_tag)
+            # is_causal flag for KV caching produces wrong mask - https://github.com/pytorch/pytorch/issues/144858
             if use_causal:
                 m, _, k_len, _ = k.shape
                 _, _, q_len, _ = q.shape
