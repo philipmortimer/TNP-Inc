@@ -5,7 +5,7 @@ import einops
 import torch
 from check_shapes import check_shapes
 from torch import nn
-from .kv_cache import update_kv_cache
+from .kv_cache import update_kv_cache, get_max_sized_mask
 
 
 class BaseMultiHeadAttention(nn.Module, ABC):
@@ -69,13 +69,14 @@ class BaseMultiHeadAttention(nn.Module, ABC):
             k, v = k_new, v_new
         else:
             k, v = update_kv_cache(k_new, v_new, kv_cache, kv_tag)
-            # is_causal flag for KV caching produces wrong mask - https://github.com/pytorch/pytorch/issues/144858
-            if use_causal:
+            # Loads cached mask in case of KV caching - https://github.com/pytorch/pytorch/issues/144858
+            big_sa_mask = get_max_sized_mask(kv_cache)
+            if big_sa_mask is not None:
                 m, _, k_len, _ = k.shape
                 _, _, q_len, _ = q.shape
-                mask = torch.tril(torch.ones(k_len, k_len, dtype=torch.bool, device=k.device))[-q_len:, :]
-                mask = mask.unsqueeze(0).expand(m, -1, -1)
+                mask = big_sa_mask[:, -q_len:, :k_len]
                 use_causal = False
+            
 
         if mask is not None:
             # Shape goes from [m, nq, nkv] -> [m, h, nq, nkv] by only changing view (no new memory allocated)

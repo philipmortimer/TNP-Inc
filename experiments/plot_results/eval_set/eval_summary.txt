@@ -2,13 +2,13 @@ Summary over eval data set RBF
         ----------------------------
         Model: IncTNP-Prior (Batched) - Best Greedy
         Params: 1058946
-        Mean_LLs: [0.3799709107624949]
-        Std_LLs: [0.49523130585805863]
-        Mean_RMSEs: [0.23551860102452338]
-        Std_RMSEs: [0.19488002588296033]
-        Mean_GT_LLs: [0.458996418339666]
-        Std_GT_LLs: [0.4734110928963473]
-        Times: [77.15354537963867]
+        Mean_LLs: [0.379262066737283]
+        Std_LLs: [0.49539266097474827]
+        Mean_RMSEs: [0.23565000694361515]
+        Std_RMSEs: [0.1949867825504052]
+        Mean_GT_LLs: [0.4589963799999168]
+        Std_GT_LLs: [0.4734110801920584]
+        Times: [77.42980122566223]
         
         ----------------------------
         Model: IncTNP-Prior (Batched) - Worst
@@ -17,7 +17,7 @@ Summary over eval data set RBF
         Std_LLs: [0.49539266097474827]
         Mean_RMSEs: [0.23565000694361515]
         Std_RMSEs: [0.1949867825504052]
-        Mean_GT_LLs: [0.45899642373296956]
-        Std_GT_LLs: [0.47341108650881925]
-        Times: [56.37070035934448]
+        Mean_GT_LLs: [0.4589963819762488]
+        Std_GT_LLs: [0.4734110709130431]
+        Times: [56.40788769721985]
         

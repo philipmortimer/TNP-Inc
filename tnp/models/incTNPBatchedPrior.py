@@ -97,12 +97,10 @@ class IncTNPBatchedEncoderPrior(nn.Module):
 
     # Incrementally updates context using kv caching. Essentially just the SA branch.
     @check_shapes(
-        "zc_new: [m, nc_new, dz]", "mask_sa_big: [m, nc_max, dz]"
+        "zc_new: [m, nc_new, dz]", "mask_sa_big: [m, nc_max, nc_max]"
     )
     def update_context(self, zc_new: torch.Tensor, kv_cache: dict, mask_sa_big: Optional[torch.Tensor] = None) -> torch.Tensor:
-        use_causal = mask_sa_big is None
-        mask_sa = mask_sa_big[:, -len(zc_new):, :]
-        zc_updated = self.transformer_encoder.encode_context(zc_new, kv_cache=kv_cache, use_causal=use_causal, mask_sa=mask_sa)
+        zc_updated = self.transformer_encoder.encode_context(zc_new, kv_cache=kv_cache)
 
     # Once the context has been conditioned on, this is used to run predictions. Essentially just the CA branch.
     @check_shapes(
@@ -182,16 +180,19 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
         mask_sa = torch.tril(torch.ones(nc + 1, nc + 1, dtype=torch.bool, device=device))
         mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1)
 
+        start_token = self.encoder.empty_token.expand(m, -1, -1) # Starts with empty token (prior condition)
+        dz = start_token.shape[2]
+
         # Check the dims work!?!?
         L = len(self.encoder.transformer_encoder.mhsa_layers)
         head_dim = int(round(self.encoder.transformer_encoder.mhsa_layers[0].attn.scale ** -2))
         kv_cache = init_kv_cache(L=L, m=m,
             k_dim=head_dim,
             v_dim=head_dim,
-            max_len=nc + 1, no_heads=self.encoder.transformer_encoder.mhsa_layers[0].attn.num_heads, device=device)
-        start_token = self.encoder.empty_token.expand(m, -1, -1) # Starts with empty token (prior condition)
-        dz = start_token.shape[2]
-        self.encoder.update_context(start_token, kv_cache, mask_sa_big=mask_sa)
+            max_len=nc + 1, no_heads=self.encoder.transformer_encoder.mhsa_layers[0].attn.num_heads, device=device,
+            mask=mask_sa,
+            nc=nc, dz=dz)
+        self.encoder.update_context(start_token, kv_cache)
 
         # Incrementally builds up representation
         batch_idx = torch.arange(m, device=device)
@@ -224,7 +225,7 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
             added_xc = xc[batch_idx, selected_points_global].unsqueeze(1)
             added_yc = yc[batch_idx, selected_points_global].unsqueeze(1)
             new_zc = self.encoder._preprocess_context(added_xc, added_yc)
-            zc = self.encoder.update_context(new_zc, kv_cache, mask_sa_big=mask_sa)
+            zc = self.encoder.update_context(new_zc, kv_cache)
         xc_new = xc[batch_idx.unsqueeze(1), ordered_indices]
         yc_new = yc[batch_idx.unsqueeze(1), ordered_indices]
 

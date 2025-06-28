@@ -107,16 +107,18 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
     @check_shapes(
         "zc_new: [m, nc_new, dz]"
     )
-    def encode_context(self, zc_new: torch.Tensor, kv_cache: dict,
-        use_causal: bool = False, mask_sa: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def encode_context(self, zc_new: torch.Tensor, kv_cache: dict) -> torch.Tensor:
         L = len(self.mhsa_layers)
         m, nc_new, dz = zc_new.shape
         ctx_vals = torch.empty((L, m, nc_new, dz), device=zc_new.device)
         for i, mhsa_layer in enumerate(self.mhsa_layers):
             self_attention_layer_tag = f"layer_{i}_sa" # Layer tag for KV
-            zc_new = mhsa_layer(zc_new, kv_cache=kv_cache, kv_tag=self_attention_layer_tag, use_causal=use_causal, mask=mask_sa)
+            zc_new = mhsa_layer(zc_new, kv_cache=kv_cache, kv_tag=self_attention_layer_tag)
+            # Writes updated context
             ctx_tag = f"context_layer_{i}"
-            kv_cache[ctx_tag] = zc_new 
+            zc_old, pos = kv_cache[ctx_tag]
+            zc_old[:, pos:pos+zc_new.shape[1] , :] = zc_new
+            kv_cache[ctx_tag] = (zc_old, pos + zc_new.shape[1])
 
     # Query - runs MHCA pathway assuming MHSA attention has already been computed
     @check_shapes(
@@ -125,7 +127,8 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
     def query(self, zt, kv_cache: dict) -> torch.Tensor:
         for i, mhca_layer in enumerate(self.mhca_layers):
             ctx_tag = f"context_layer_{i}"
-            zt = mhca_layer(zt, kv_cache[ctx_tag])
+            zc, pos = kv_cache[ctx_tag]
+            zt = mhca_layer(zt, zc[:, :pos,:])
         return zt
 
 
