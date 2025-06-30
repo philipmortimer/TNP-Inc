@@ -5,6 +5,11 @@ import torch.distributions as td
 from tnp.networks.kv_cache import init_kv_cache, update_kv_cache
 import numpy as np
 import time
+import matplotlib.pyplot as plt
+import matplotlib
+
+matplotlib.rcParams["mathtext.fontset"] = "stix"
+matplotlib.rcParams["font.family"] = "STIXGeneral"
 
 # Tests that KV caching works exactly the same as without
 @torch.no_grad
@@ -56,9 +61,9 @@ def measure_condition_time_memory_kv():
     model.eval()
     # Dataset
     burn_in = 1 # Number of burn in runs to ignore
-    aggregate_over = 2 # Number of runs to aggregate data over
-    token_step = 50 # How many increments of tokens to go up in
-    max_nc, dx, dy, m = 10_000, 1, 1, 1
+    aggregate_over = 3 # Number of runs to aggregate data over
+    token_step = 500 # How many increments of tokens to go up in
+    max_nc, dx, dy, m = 50_000, 1, 1, 1
     max_high = 2
     xcs = (torch.rand((1, max_nc, dx), device=device) * max_high * 2) - max_high
     ycs = (torch.rand((1, max_nc, dy), device=device) * max_high * 2) - max_high
@@ -114,8 +119,25 @@ def measure_condition_time_memory_kv():
     print(summary_block)
     with open('experiments/plot_results/kv/' + 'mem_run.txt', 'w') as file_object:
         file_object.write(summary_block)
-    
-            
+    # Plots runtime
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(upper_ctxs, runtime)
+    ax.set_xlabel('Context Size')
+    ax.set_ylabel('Runtime for Conditioning (ms)')
+    ax.set_title(f'Runtime as Context Size Increases with KV-Caching (M={token_step})')
+    ax.grid(True, linestyle='--', alpha=0.4)
+    fig.tight_layout()
+    plt.savefig('experiments/plot_results/kv/time_vs_ctx.png', dpi=300)     
+
+    # Plots cumulative memory 
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(upper_ctxs, memory)
+    ax.set_xlabel('Context Size')
+    ax.set_ylabel('Cumulaitve Memory Usage (MB)')
+    ax.set_title('Memory Use with KV-Caching')
+    ax.grid(True, linestyle='--', alpha=0.4)
+    fig.tight_layout()
+    plt.savefig('experiments/plot_results/kv/memory_vs_ctx.png', dpi=300)         
 
 
 
