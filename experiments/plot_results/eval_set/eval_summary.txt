@@ -8,7 +8,7 @@ Summary over eval data set RBF
         Std_RMSEs: [0.1949867825504052]
         Mean_GT_LLs: [0.4589963799999168]
         Std_GT_LLs: [0.4734110801920584]
-        Times: [77.42980122566223]
+        Times: [79.60950684547424]
         
         ----------------------------
         Model: IncTNP-Prior (Batched) - Worst
@@ -19,5 +19,5 @@ Summary over eval data set RBF
         Std_RMSEs: [0.1949867825504052]
         Mean_GT_LLs: [0.4589963819762488]
         Std_GT_LLs: [0.4734110709130431]
-        Times: [56.40788769721985]
+        Times: [56.51767945289612]
         

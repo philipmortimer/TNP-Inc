@@ -19,21 +19,22 @@ def get_max_sized_mask(cache):
     if cache is None: return None
     return cache.get('context_big_mask', None)
 
-def add_max_sized_mask(cache, mask):
-    cache['context_big_mask'] = mask
 
 # Initialises a KV cache with a max sequence length
-def init_kv_cache(L, m, v_dim, k_dim, max_len, no_heads, device, mask, nc, dz) -> dict:
+def init_kv_cache(L, m, v_dim, k_dim, max_len, no_heads, device, nc, dz) -> dict:
     kv_cache = {} # Empty cache
-    add_max_sized_mask(kv_cache, mask)
+    # Creates big mask for easy slicing
+    mask_sa = torch.tril(torch.ones(nc + 1, nc + 1, dtype=torch.bool, device=device))
+    mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1)
+    kv_cache['context_big_mask'] = mask_sa
     for i in range(L):
         # Initialises per layer K and V cache
         self_attention_layer_tag = f"layer_{i}_sa"
-        k_empty = torch.empty((m, no_heads, max_len, k_dim), device=device)
-        v_empty = torch.empty((m, no_heads, max_len, v_dim), device=device)
+        k_empty = torch.empty((m, no_heads, max_len, k_dim), device=device, dtype=torch.float32)
+        v_empty = torch.empty((m, no_heads, max_len, v_dim), device=device, dtype=torch.float32)
         kv_cache[self_attention_layer_tag] = (k_empty, v_empty, 0)
         # Initialises context reps
         ctx_tag = f"context_layer_{i}"
-        ctx_tensor = torch.empty((m, nc + 1, dz), device=device)
+        ctx_tensor = torch.empty((m, nc + 1, dz), device=device, dtype=torch.float32)
         kv_cache[ctx_tag] = (ctx_tensor, 0)
     return kv_cache

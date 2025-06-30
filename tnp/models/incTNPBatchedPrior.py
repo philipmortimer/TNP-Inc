@@ -176,21 +176,15 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
         # Tracks which context points have been picked
         picked_mask = torch.zeros(m, nc, dtype=torch.bool, device=device) # Stores whether a context point has been picked
 
-        # Creates one big SA mask to be sliced each time
-        mask_sa = torch.tril(torch.ones(nc + 1, nc + 1, dtype=torch.bool, device=device))
-        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1)
-
         start_token = self.encoder.empty_token.expand(m, -1, -1) # Starts with empty token (prior condition)
         dz = start_token.shape[2]
 
-        # Check the dims work!?!?
         L = len(self.encoder.transformer_encoder.mhsa_layers)
         head_dim = int(round(self.encoder.transformer_encoder.mhsa_layers[0].attn.scale ** -2))
         kv_cache = init_kv_cache(L=L, m=m,
             k_dim=head_dim,
             v_dim=head_dim,
             max_len=nc + 1, no_heads=self.encoder.transformer_encoder.mhsa_layers[0].attn.num_heads, device=device,
-            mask=mask_sa,
             nc=nc, dz=dz)
         self.encoder.update_context(start_token, kv_cache)
 
