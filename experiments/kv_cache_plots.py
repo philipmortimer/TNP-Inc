@@ -62,8 +62,8 @@ def measure_condition_time_memory_kv():
     model.eval()
     # Dataset
     burn_in = 1 # Number of burn in runs to ignore
-    aggregate_over = 2 # Number of runs to aggregate data over
-    token_step = 250 # How many increments of tokens to go up in
+    aggregate_over = 5 # Number of runs to aggregate data over
+    token_step = 1 # How many increments of tokens to go up in
     max_nc, dx, dy, m = 50_000, 1, 1, 1
     max_high = 2
     xcs = (torch.rand((1, max_nc, dx), device=device) * max_high * 2) - max_high
@@ -202,9 +202,9 @@ def compare_kv_against_none(strategy="fixed", targets=128):
     model.eval()
     # Dataset
     burn_in = 1 # Number of burn in runs to ignore
-    aggregate_over = 100 # Number of runs to aggregate data over
-    token_step = 500 # How many increments of tokens to go up in
-    max_nc, dx, dy, m = 5_000, 1, 1, 1
+    aggregate_over = 5 # Number of runs to aggregate data over
+    token_step = 1 # How many increments of tokens to go up in
+    max_nc, dx, dy, m = 20_000, 1, 1, 1
     nt = targets if strategy == "fixed" else max_nc
     max_high = 2
     xcs = (torch.rand((1, max_nc, dx), device=device) * max_high * 2) - max_high
@@ -348,7 +348,7 @@ def compare_kv_against_none(strategy="fixed", targets=128):
     memory_file_name = f'experiments/plot_results/kv/kv_without_memory_{strategy}_{targets}.png'
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.plot(upper_ctxs, memory_no_kv, label='No Caching')
-    confidence_bars = True
+    confidence_bars = False
     if confidence_bars:
         ci95 = 1.96 * memory_kv_std / np.sqrt(aggregate_over)
         ax.fill_between(upper_ctxs,
@@ -378,7 +378,6 @@ def compare_kv_against_none(strategy="fixed", targets=128):
 if __name__ == "__main__":
     #test_kv_cache()
     measure_condition_time_memory_kv()
-    exit(0)
     compare_kv_against_none(strategy="fixed", targets=128)
     compare_kv_against_none(strategy="scale")
     compare_kv_against_none(strategy="fixed", targets=512)
