@@ -5,7 +5,7 @@ import einops
 import torch
 from check_shapes import check_shapes
 from torch import nn
-from .kv_cache import update_kv_cache, get_max_sized_mask
+from .kv_cache import update_kv_cache
 
 
 class BaseMultiHeadAttention(nn.Module, ABC):
@@ -70,11 +70,11 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         else:
             k, v = update_kv_cache(k_new, v_new, kv_cache, kv_tag)
             # Loads cached mask in case of KV caching - https://github.com/pytorch/pytorch/issues/144858
-            big_sa_mask = get_max_sized_mask(kv_cache)
-            if big_sa_mask is not None:
+            if kv_cache is not None and  kv_tag is not None:
                 m, _, k_len, _ = k.shape
                 _, _, q_len, _ = q.shape
-                mask = big_sa_mask[:, -q_len:, :k_len]
+                mask = torch.tril(torch.ones(k_len, k_len, dtype=torch.bool, device=k.device))[-q_len:]
+                mask = mask.unsqueeze(0).expand(m, -1, -1)
                 use_causal = False
             
 

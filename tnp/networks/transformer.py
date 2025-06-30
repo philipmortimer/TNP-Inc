@@ -7,6 +7,7 @@ import einops
 import torch
 from check_shapes import check_shapes
 from torch import nn
+from .kv_cache import update_ctx_cache
 
 from .attention_layers import (
     MultiHeadCrossAttentionLayer,
@@ -116,9 +117,7 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
             zc_new = mhsa_layer(zc_new, kv_cache=kv_cache, kv_tag=self_attention_layer_tag)
             # Writes updated context
             ctx_tag = f"context_layer_{i}"
-            zc_old, pos = kv_cache[ctx_tag]
-            zc_old[:, pos:pos+zc_new.shape[1] , :] = zc_new
-            kv_cache[ctx_tag] = (zc_old, pos + zc_new.shape[1])
+            update_ctx_cache(zc_new, kv_cache, ctx_tag)
 
     # Query - runs MHCA pathway assuming MHSA attention has already been computed
     @check_shapes(
@@ -127,8 +126,7 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
     def query(self, zt, kv_cache: dict) -> torch.Tensor:
         for i, mhca_layer in enumerate(self.mhca_layers):
             ctx_tag = f"context_layer_{i}"
-            zc, pos = kv_cache[ctx_tag]
-            zt = mhca_layer(zt, zc[:, :pos,:])
+            zt = mhca_layer(zt, kv_cache[ctx_tag])
         return zt
 
 
