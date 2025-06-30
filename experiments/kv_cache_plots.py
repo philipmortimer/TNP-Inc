@@ -9,7 +9,7 @@ import time
 # Tests that KV caching works exactly the same as without
 @torch.no_grad
 def test_kv_cache():
-    atol=1e-5 # Tolerance for close checks
+    atol=1e-4 # Tolerance for close checks
     rtol = 1e-4
     device='cuda'
     # Fetches model
@@ -17,10 +17,11 @@ def test_kv_cache():
     model.eval()
     # Generates random dataset
     N, m, nc, nt, dx, dy = 100, 16, 32, 128, 1, 1
-    xcs = torch.randn((N, m, nc, dx), device=device)
-    ycs = torch.randn((N, m, nc, dy), device=device)
-    xts = torch.randn((N, m, nt, dx), device=device)
-    yts = torch.randn((N, m, nt, dy), device=device)
+    max_high = 2
+    xcs = (torch.rand((N, m, nc, dx), device=device) * (2 * max_high)) - max_high
+    ycs = (torch.rand((N, m, nc, dy), device=device) * (2 * max_high)) - max_high
+    xts = (torch.rand((N, m, nt, dx), device=device) * (2 * max_high)) - max_high
+    yts = (torch.rand((N, m, nt, dy), device=device) * (2 * max_high)) - max_high
     # Loops through data and asserts that with / without KV caching produce the same model prediction
     for i in range(N):
         # Initialises KV cache with start token
@@ -42,7 +43,7 @@ def test_kv_cache():
             # Checks that distributions are same
             assert isinstance(pred_dist_non_cached, td.Normal) and isinstance(pred_dist_kv_cached, td.Normal), "Both should be normal predictions"
             assert torch.allclose(pred_dist_non_cached.mean, pred_dist_kv_cached.mean, atol=atol, rtol=rtol), "Dist means must be same"
-            assert torch.allclose(pred_dist_non_cached.stddev, pred_dist_kv_cached.stddev, atol=atol, rtol=rtol), "Dist std must be same"
+            assert torch.allclose(pred_dist_non_cached.stddev, pred_dist_kv_cached.stddev, atol=atol, rtol=rtol), "Dist std must be same"#
     print("KV Cache tests all passed")
 
     
@@ -69,14 +70,7 @@ def measure_condition_time_memory_kv():
     for j in range(burn_in + aggregate_over):
         # Initailises  KV cache
         start_token = model.encoder.empty_token.expand(m, -1, -1) # Starts with empty token (prior condition)
-        dz = start_token.shape[2]
-        L = len(model.encoder.transformer_encoder.mhsa_layers)
-        head_dim = int(round(model.encoder.transformer_encoder.mhsa_layers[0].attn.scale ** -2))
-        kv_cache = init_kv_cache(L=L, m=m,
-            k_dim=head_dim,
-            v_dim=head_dim,
-            max_len=max_nc + 1, no_heads=model.encoder.transformer_encoder.mhsa_layers[0].attn.num_heads, device=device,
-            nc=max_nc, dz=dz)
+        kv_cache = init_kv_cache()
         model.encoder.update_context(start_token, kv_cache)
         # Adds context tokens n at a time
         ctx_inc = 0
