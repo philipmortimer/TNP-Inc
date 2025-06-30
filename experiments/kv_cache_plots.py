@@ -62,9 +62,9 @@ def measure_condition_time_memory_kv():
     model.eval()
     # Dataset
     burn_in = 1 # Number of burn in runs to ignore
-    aggregate_over = 3 # Number of runs to aggregate data over
-    token_step = 500 # How many increments of tokens to go up in
-    max_nc, dx, dy, m = 5_000, 1, 1, 1
+    aggregate_over = 2 # Number of runs to aggregate data over
+    token_step = 250 # How many increments of tokens to go up in
+    max_nc, dx, dy, m = 50_000, 1, 1, 1
     max_high = 2
     xcs = (torch.rand((1, max_nc, dx), device=device) * max_high * 2) - max_high
     ycs = (torch.rand((1, max_nc, dy), device=device) * max_high * 2) - max_high
@@ -107,6 +107,8 @@ def measure_condition_time_memory_kv():
                 memory[write_j, ctx_inc] = peak_memory_mb
             ctx_inc += 1
     # Averages runtime and memory
+    runtime_std  = runtime.std(axis=0, ddof=1)
+    memory_std = memory.std(axis=0, ddof=1)
     runtime = np.mean(runtime, axis=0)
     memory = np.mean(memory, axis=0)
 
@@ -115,30 +117,79 @@ def measure_condition_time_memory_kv():
     ----------------------------
     Cumulative Context Size: {upper_ctxs}
     Runtime Incremental (ms): {runtime}
+    Runtime std: {runtime_std}
+    memory std: {memory_std}
     Memory Cumulative (Mb): {memory}
     """
     print(summary_block)
     with open('experiments/plot_results/kv/' + 'mem_run.txt', 'w') as file_object:
         file_object.write(summary_block)
+    confidence_bars = True
     # Plots runtime
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.plot(upper_ctxs, runtime)
+    if confidence_bars:
+        ci95 = 1.96 * runtime_std / np.sqrt(aggregate_over)
+        ax.fill_between(upper_ctxs,
+                        runtime - ci95,
+                        runtime + ci95,
+                        alpha=0.25,)
     ax.set_xlabel('Context Size')
     ax.set_ylabel('Runtime for Conditioning (ms)')
     ax.set_title(f'Runtime as Context Size Increases with KV-Caching (M={token_step})')
     ax.grid(True, linestyle='--', alpha=0.4)
     fig.tight_layout()
-    plt.savefig('experiments/plot_results/kv/time_vs_ctx.png', dpi=300)     
+    plt.savefig('experiments/plot_results/kv/time_vs_ctx.png', dpi=300)   
 
     # Plots cumulative memory 
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.plot(upper_ctxs, memory)
+    if confidence_bars:
+        ci95 = 1.96 * memory_std / np.sqrt(aggregate_over)
+        ax.fill_between(upper_ctxs,
+                        memory - ci95,
+                        memory + ci95,
+                        alpha=0.25,)
     ax.set_xlabel('Context Size')
     ax.set_ylabel('Cumulative Memory Usage (MB)')
     ax.set_title('Memory Use with KV-Caching')
     ax.grid(True, linestyle='--', alpha=0.4)
     fig.tight_layout()
-    plt.savefig('experiments/plot_results/kv/memory_vs_ctx.png', dpi=300)      
+    plt.savefig('experiments/plot_results/kv/memory_vs_ctx.png', dpi=300) 
+
+    # Plots both on same grid
+    COL_RT, COL_MEM = 'C0', 'C3'  # Colour palleter
+    fig, ax_rt = plt.subplots(figsize=(7, 5))
+    ax_mem = ax_rt.twinx()
+    # Runtime
+    ax_rt.plot(upper_ctxs, runtime, color=COL_RT, label="Runtime")
+    if confidence_bars:
+        ci95 = 1.96 * runtime_std / np.sqrt(aggregate_over)
+        ax_rt.fill_between(upper_ctxs,
+                        runtime - ci95,
+                        runtime + ci95,
+                        alpha=0.25,color=COL_RT,)
+    ax_rt.set_xlabel('Context Size')
+    ax_rt.set_ylabel('Runtime for Conditioning (ms)', color=COL_RT)
+    ax_rt.tick_params(axis='y', colors=COL_RT)
+    ax_rt.grid(True, linestyle='--', alpha=0.4)
+    # Memory
+    ax_mem.plot(upper_ctxs, memory, color=COL_MEM, label="Memory")
+    if confidence_bars:
+        ci95 = 1.96 * memory_std / np.sqrt(aggregate_over)
+        ax_mem.fill_between(upper_ctxs,
+                        memory - ci95,
+                        memory + ci95,
+                        alpha=0.25,color=COL_MEM)
+    ax_mem.set_ylabel('Cumulative Memory Usage (MB)', color=COL_MEM)
+    ax_mem.tick_params(axis='y', colors=COL_MEM)
+    #Other details
+    lines  = ax_rt.get_lines() + ax_mem.get_lines()
+    labels = [l.get_label() for l in lines]
+    ax_rt.legend(lines, labels)
+    fig.suptitle(f'KV-Cache Scaling (M={token_step})', fontsize=14)
+    fig.tight_layout()
+    fig.savefig('experiments/plot_results/kv/runtime_memory_combined.png',dpi=300,)
   
 
 # Measures the conditioning time for the model
@@ -326,9 +377,9 @@ def compare_kv_against_none(strategy="fixed", targets=128):
 
 if __name__ == "__main__":
     #test_kv_cache()
-    #measure_condition_time_memory_kv()
-    compare_kv_against_none(strategy="fixed", targets=128)
+    measure_condition_time_memory_kv()
     exit(0)
+    compare_kv_against_none(strategy="fixed", targets=128)
     compare_kv_against_none(strategy="scale")
     compare_kv_against_none(strategy="fixed", targets=512)
     compare_kv_against_none(strategy="fixed", targets=2048)
