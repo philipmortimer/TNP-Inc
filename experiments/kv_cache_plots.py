@@ -10,6 +10,7 @@ import matplotlib
 
 matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
+matplotlib.rcParams["axes.titlesize"]= 14
 
 # Tests that KV caching works exactly the same as without
 @torch.no_grad
@@ -150,7 +151,7 @@ def compare_kv_against_none(strategy="fixed", targets=128):
     model.eval()
     # Dataset
     burn_in = 1 # Number of burn in runs to ignore
-    aggregate_over = 2 # Number of runs to aggregate data over
+    aggregate_over = 100 # Number of runs to aggregate data over
     token_step = 500 # How many increments of tokens to go up in
     max_nc, dx, dy, m = 5_000, 1, 1, 1
     nt = targets if strategy == "fixed" else max_nc
@@ -252,6 +253,8 @@ def compare_kv_against_none(strategy="fixed", targets=128):
             ctx_inc += 1
 
     # Aggregates results
+    memory_kv_std  = memory_kv.std(axis=0, ddof=1)
+    memory_no_kv_std  = memory_no_kv.std(axis=0, ddof=1)
     runtime_no_kv = np.mean(runtime_no_kv, axis=0)
     condition_kv = np.mean(condition_kv, axis=0)
     query_kv = np.mean(query_kv, axis=0)
@@ -294,7 +297,20 @@ def compare_kv_against_none(strategy="fixed", targets=128):
     memory_file_name = f'experiments/plot_results/kv/kv_without_memory_{strategy}_{targets}.png'
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.plot(upper_ctxs, memory_no_kv, label='No Caching')
+    confidence_bars = True
+    if confidence_bars:
+        ci95 = 1.96 * memory_kv_std / np.sqrt(aggregate_over)
+        ax.fill_between(upper_ctxs,
+                        memory_no_kv - ci95,
+                        memory_no_kv + ci95,
+                        alpha=0.25,)
     ax.plot(upper_ctxs, memory_kv, label='KV Caching (Condition + Query)')
+    if confidence_bars:
+        ci95 = 1.96 * memory_kv / np.sqrt(aggregate_over)
+        ax.fill_between(upper_ctxs,
+                        memory_kv - ci95,
+                        memory_kv + ci95,
+                        alpha=0.25,)
     ax.set_xlabel('Context Size')
     ax.set_ylabel('Cumulative Memory Usage (MB)')
     ax.set_title(f'Memory Usage as Context Size Increases ({tit_text})')
@@ -310,8 +326,9 @@ def compare_kv_against_none(strategy="fixed", targets=128):
 
 if __name__ == "__main__":
     #test_kv_cache()
-    measure_condition_time_memory_kv()
+    #measure_condition_time_memory_kv()
     compare_kv_against_none(strategy="fixed", targets=128)
+    exit(0)
     compare_kv_against_none(strategy="scale")
     compare_kv_against_none(strategy="fixed", targets=512)
     compare_kv_against_none(strategy="fixed", targets=2048)
