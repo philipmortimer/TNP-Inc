@@ -63,7 +63,7 @@ def measure_condition_time_memory_kv():
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 3 # Number of runs to aggregate data over
     token_step = 500 # How many increments of tokens to go up in
-    max_nc, dx, dy, m = 50_000, 1, 1, 1
+    max_nc, dx, dy, m = 5_000, 1, 1, 1
     max_high = 2
     xcs = (torch.rand((1, max_nc, dx), device=device) * max_high * 2) - max_high
     ycs = (torch.rand((1, max_nc, dy), device=device) * max_high * 2) - max_high
@@ -142,7 +142,7 @@ def measure_condition_time_memory_kv():
 
 # Measures the conditioning time for the model
 @torch.no_grad
-def compare_kv_against_none(strategy="fixed"):
+def compare_kv_against_none(strategy="fixed", targets=128):
     assert strategy in {"fixed", "scale"}, "Invalid strategy"
     # Gets model
     device='cuda'
@@ -152,8 +152,8 @@ def compare_kv_against_none(strategy="fixed"):
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 2 # Number of runs to aggregate data over
     token_step = 500 # How many increments of tokens to go up in
-    max_nc, dx, dy, m = 50_000, 1, 1, 1
-    nt = 128 if strategy == "fixed" else max_nc
+    max_nc, dx, dy, m = 5_000, 1, 1, 1
+    nt = targets if strategy == "fixed" else max_nc
     max_high = 2
     xcs = (torch.rand((1, max_nc, dx), device=device) * max_high * 2) - max_high
     ycs = (torch.rand((1, max_nc, dy), device=device) * max_high * 2) - max_high
@@ -271,11 +271,11 @@ def compare_kv_against_none(strategy="fixed"):
     Memory Cumulative No KV (Mb): {memory_no_kv}
     """
     print(summary_block)
-    with open('experiments/plot_results/kv/' + 'comparison_kv_vs_none.txt', 'w') as file_object:
+    with open('experiments/plot_results/kv/' + f'comparison_kv_vs_none_{strategy}-{targets}.txt', 'w') as file_object:
         file_object.write(summary_block)
 
     # Plots runtime results
-    runtime_file_name = f'experiments/plot_results/kv/kv_without_runtime_{strategy}.png'
+    runtime_file_name = f'experiments/plot_results/kv/kv_without_runtime_{strategy}_{targets}.png'
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.plot(upper_ctxs, runtime_no_kv, label='No Caching')
     ax.plot(upper_ctxs, runtime_kv, label='KV Caching (Condition + Query)')
@@ -291,16 +291,16 @@ def compare_kv_against_none(strategy="fixed"):
     plt.savefig(runtime_file_name, dpi=300)
 
     # Plots memory
-    memory_file_name = f'experiments/plot_results/kv/kv_without_memory_{strategy}.png'
+    memory_file_name = f'experiments/plot_results/kv/kv_without_memory_{strategy}_{targets}.png'
     fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot(upper_ctxs, memory_kv, label='No Caching')
-    ax.plot(upper_ctxs, memory_no_kv, label='KV Caching (Condition + Query)')
+    ax.plot(upper_ctxs, memory_no_kv, label='No Caching')
+    ax.plot(upper_ctxs, memory_kv, label='KV Caching (Condition + Query)')
     ax.set_xlabel('Context Size')
     ax.set_ylabel('Cumulative Memory Usage (MB)')
     ax.set_title(f'Memory Usage as Context Size Increases ({tit_text})')
     ax.legend()
     tit_text = f'NT={nt}' if strategy == "fixed" else 'NT=NC'
-    ax.set_title(f'Runtime as Context Size Increases ({tit_text})')
+    ax.set_title(f'Memory Usage as Context Size Increases ({tit_text})')
     ax.grid(True, linestyle='--', alpha=0.4)
     fig.tight_layout()
     plt.savefig(memory_file_name, dpi=300)
@@ -310,6 +310,10 @@ def compare_kv_against_none(strategy="fixed"):
 
 if __name__ == "__main__":
     #test_kv_cache()
-    #measure_condition_time_memory_kv()
-    compare_kv_against_none(strategy="fixed")
+    measure_condition_time_memory_kv()
+    compare_kv_against_none(strategy="fixed", targets=128)
     compare_kv_against_none(strategy="scale")
+    compare_kv_against_none(strategy="fixed", targets=512)
+    compare_kv_against_none(strategy="fixed", targets=2048)
+    compare_kv_against_none(strategy="fixed", targets=10_000)
+    compare_kv_against_none(strategy="fixed", targets=100_000)
