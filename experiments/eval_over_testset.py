@@ -138,6 +138,15 @@ def eval_model_over_permutations(model, test_set, no_reps: int = 1, shuffle_stra
         "time": timings,
     }
     return results
+
+# Loads data effeciently for fast computation
+def load_data(data_gen, device="cuda"):
+    xc = torch.stack([b.xc for b in data_gen], 0).to(device, non_blocking=True)
+    yc = torch.stack([b.yc for b in data_gen], 0).to(device, non_blocking=True)
+    xt = torch.stack([b.xt for b in data_gen], 0).to(device, non_blocking=True)
+    yt = torch.stack([b.yt for b in data_gen], 0).to(device, non_blocking=True)
+    gtll= torch.stack([b.gt_loglik for b in data_gen], 0).to(device, non_blocking=True)
+    return dict(xc=xc, yc=yc, xt=xt, yt=yt, gtll=gtll)
         
 
 # Gets rbf kernel with rangesame default test params used
@@ -163,8 +172,9 @@ def get_rbf_rangesame_test_set():
     gen_test = RandomScaleGPGenerator(dim=1, min_nc=min_nc, max_nc=max_nc, min_nt=nt, max_nt=nt, batch_size=batch_size,
         context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=noise_std,
         deterministic=deterministic, kernel=kernels)
-    test_set = [batch for batch in gen_test]
-    return test_set, "RBF"
+    data = [b for b in gen_test]
+    #data = load_data(gen_test)
+    return data, "RBF"
 
 # Main function used to handle flow of evaluating model and plotting the results
 def models_perf_main(model_list, test_data):
@@ -202,13 +212,13 @@ def get_model_list():
         1)
     tnp_causal = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
         'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', 'random', "IncTNP", "",
-        1)
+        10)
     tnp_causal_batched = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'random', "IncTNP (Batched)", "",
-        1)
+        10)
     tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'random', "IncTNP-Prior (Batched)", "",
-        1)
+        10)
     # TNP Causal Batched Prior Greedy Strategies
     greedy_best_tnp_causal_batched_prior_logp = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyBestPriorLogP', 
@@ -248,6 +258,7 @@ def get_model_list():
     models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
         greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
         greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
+    models = [tnp_causal]
     return models
 
 if __name__ == "__main__":
