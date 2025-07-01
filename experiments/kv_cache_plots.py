@@ -204,8 +204,8 @@ def compare_kv_against_none(strategy="fixed", targets=128):
     model.eval()
     # Dataset
     burn_in = 1 # Number of burn in runs to ignore
-    aggregate_over = 5 # Number of runs to aggregate data over
-    token_step = 1 # How many increments of tokens to go up in
+    aggregate_over = 20 # Number of runs to aggregate data over
+    token_step = 50 # How many increments of tokens to go up in
     max_nc, dx, dy, m = 20_000, 1, 1, 1
     nt = targets if strategy == "fixed" else max_nc
     max_high = 2
@@ -379,10 +379,10 @@ def compare_kv_against_none(strategy="fixed", targets=128):
 
 if __name__ == "__main__":
     #test_kv_cache()
-    measure_condition_time_memory_kv()
+    #measure_condition_time_memory_kv()
     compare_kv_against_none(strategy="fixed", targets=128)
-    compare_kv_against_none(strategy="scale")
-    compare_kv_against_none(strategy="fixed", targets=512)
-    compare_kv_against_none(strategy="fixed", targets=2048)
-    compare_kv_against_none(strategy="fixed", targets=10_000)
-    compare_kv_against_none(strategy="fixed", targets=100_000)
+    #compare_kv_against_none(strategy="scale")
+    #compare_kv_against_none(strategy="fixed", targets=512)
+    #compare_kv_against_none(strategy="fixed", targets=2048)
+    #compare_kv_against_none(strategy="fixed", targets=10_000)
+    #compare_kv_against_none(strategy="fixed", targets=100_000)
