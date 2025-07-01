@@ -48,7 +48,7 @@ def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
     m, nc, dx = batch.xc.shape
     _, nt, dy = batch.yt.shape
     # Converts batch to cuda
-    batch.xc, batch.yc, batch.xt, batch.yt, batch.x, batch.y = batch.xc.to(device), batch.yc.to(device), batch.xt.to(device), batch.yt.to(device), batch.x.to(device), batch.y.to(device)
+    #batch.xc, batch.yc, batch.xt, batch.yt, batch.x, batch.y = batch.xc.to(device), batch.yc.to(device), batch.xt.to(device), batch.yt.to(device), batch.x.to(device), batch.y.to(device)
     xc_new, yc_new = None, None
     if shuffle_strategy == "random":
         perms = torch.rand(m, nc, device=batch.xc.device).argsort(dim=1)
@@ -77,37 +77,50 @@ def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
 
 # Evaluates a given models performance. Includes the option for a small number of defined strategies.
 @torch.no_grad
-def eval_model(model, test_set, shuffle_strategy):
-    log_liks, rmse_vals, gt_log_liks = [], [], []
+def eval_model(model, test_set, shuffle_strategy, device="cuda"):
+    shuffle_time = 0
+    inf_time = 0
+    stat_time = 0
+    N = len(test_set)
+    log_liks, rmse_vals, gt_log_liks = torch.empty(N, device=device), torch.empty(N, device=device), torch.empty(N, device=device)
+    i=0
     for batch_test in tqdm(test_set, desc="Evaluating Model on One Train Set"):
         # Shuffles data using defined permute strategy
+        start_shuff_t = time.time()
         batch = shuffle_batch(model, batch_test, shuffle_strategy)
+        shuffle_time += time.time() - start_shuff_t
         # Model LL and rmse
         m, nt, _ = batch.yt.shape
         # Gets predictive distribution from model
+        start_inf_t = time.time()
         pred_dist = np_pred_fn(model, batch, predict_without_yt_tnpa=True)
+        inf_time += time.time() - start_inf_t
+        stat_start_time = time.time()
         ll = pred_dist.log_prob(batch.yt).sum() / (m * nt)
-        rmse = nn.functional.mse_loss(pred_dist.mean, batch.yt).sqrt().cpu()
+        rmse = nn.functional.mse_loss(pred_dist.mean, batch.yt).sqrt()
 
         # GT LL - may need to wrap this in if statement in future datasets
-        _, _, gt_loglik = batch_test.gt_pred(
-            xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt
-        )
-        gt_loglik = gt_loglik.sum() / (m * nt)
+        gt_loglik = batch_test.gtll
+        stat_time += time.time() - stat_start_time
 
         # Adds data
-        log_liks.append(ll.item())
-        rmse_vals.append(rmse.item())
-        gt_log_liks.append(gt_loglik.item())
+        log_liks[i] = ll
+        rmse_vals[i] = rmse
+        gt_log_liks[i] = gt_loglik
+        i+=1
+
+    # Print times
+    print_times_tracked = True
+    if print_times_tracked: print(f'Inf time {inf_time:.2f}, Stat time {stat_time:.2f}, Shuffle time {shuffle_time:.2f}')
 
     # Gathers results
     results = {
-        "mean_ll": np.mean(log_liks),
-        "std_ll": np.std(log_liks),
-        "mean_rmse": np.mean(rmse_vals),
-        "std_rmse": np.std(rmse_vals),
-        "mean_gt_ll": np.mean(gt_log_liks),
-        "std_gt_ll": np.std(gt_log_liks),
+        "mean_ll": torch.mean(log_liks).item(),
+        "std_ll": torch.std(log_liks).item(),
+        "mean_rmse": torch.mean(rmse_vals).item(),
+        "std_rmse": torch.std(rmse_vals).item(),
+        "mean_gt_ll": torch.mean(gt_log_liks).item(),
+        "std_gt_ll": torch.std(gt_log_liks).item(),
     }
     return results
 
@@ -141,12 +154,25 @@ def eval_model_over_permutations(model, test_set, no_reps: int = 1, shuffle_stra
 
 # Loads data effeciently for fast computation
 def load_data(data_gen, device="cuda"):
-    xc = torch.stack([b.xc for b in data_gen], 0).to(device, non_blocking=True)
-    yc = torch.stack([b.yc for b in data_gen], 0).to(device, non_blocking=True)
-    xt = torch.stack([b.xt for b in data_gen], 0).to(device, non_blocking=True)
-    yt = torch.stack([b.yt for b in data_gen], 0).to(device, non_blocking=True)
-    gtll= torch.stack([b.gt_loglik for b in data_gen], 0).to(device, non_blocking=True)
-    return dict(xc=xc, yc=yc, xt=xt, yt=yt, gtll=gtll)
+    start_t = time.time()
+    for b in data_gen:
+        b.xc = b.xc.to(device, non_blocking=True)
+        b.yc = b.yc.to(device, non_blocking=True)
+        b.xt = b.xt.to(device, non_blocking=True)
+        b.yt = b.yt.to(device, non_blocking=True)
+        b.x = b.x.to(device, non_blocking=True)
+        b.y = b.y.to(device, non_blocking=True)
+        # Pre computes GTLL
+        m, nt, _ = b.xt.shape
+        _, _, gt_loglik = b.gt_pred(
+                    xc=b.xc, yc=b.yc, xt=b.xt, yt=b.yt
+                )
+        gt_loglik = gt_loglik.sum() / (m * nt)
+        b.gtll = gt_loglik.to(device, non_blocking=True)
+        b.gt_pred = None
+    data = [b for b in data_gen]
+    print(f'Data Time {time.time() - start_t:.2f}')
+    return data
         
 
 # Gets rbf kernel with rangesame default test params used
@@ -172,8 +198,7 @@ def get_rbf_rangesame_test_set():
     gen_test = RandomScaleGPGenerator(dim=1, min_nc=min_nc, max_nc=max_nc, min_nt=nt, max_nt=nt, batch_size=batch_size,
         context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=noise_std,
         deterministic=deterministic, kernel=kernels)
-    data = [b for b in gen_test]
-    #data = load_data(gen_test)
+    data = load_data(gen_test)
     return data, "RBF"
 
 # Main function used to handle flow of evaluating model and plotting the results
