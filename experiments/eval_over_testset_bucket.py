@@ -1,4 +1,7 @@
-# Evaluation over the test set using a bucketed approach - harder to read but more effecient
+# Evaluates over many instance of test set similar to eval_over_testset.py
+# Difference is it buckets items by the context size. This allows for a more vectorised approach.
+# A much better approach would be to implement block mask support for all TNP models to run multiple instances together
+# but this is a good medium without altering any TNP API calls atm.
 import numpy as np
 import torch
 from scipy import stats
@@ -38,119 +41,10 @@ from tnp.data.base import Batch
 from tnp.models.incTNPBatchedPrior import IncTNPBatchedPrior
 from plot_adversarial_perms import get_model
 from tqdm import tqdm
-
-
-matplotlib.rcParams["mathtext.fontset"] = "stix"
-matplotlib.rcParams["font.family"] = "STIXGeneral"
-
-def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
-    assert shuffle_strategy in {"random", "GreedyBestPriorLogP", "GreedyWorstPriorLogP", "GreedyMedianPriorLogP", "GreedyBestPriorVar", "GreedyWorstPriorVar", "GreedyMedianPriorVar"}, "Invalid context shuffle strategy"
-    m, nc, dx = batch.xc.shape
-    _, nt, dy = batch.yt.shape
-    # Converts batch to cuda
-    #batch.xc, batch.yc, batch.xt, batch.yt, batch.x, batch.y = batch.xc.to(device), batch.yc.to(device), batch.xt.to(device), batch.yt.to(device), batch.x.to(device), batch.y.to(device)
-    xc_new, yc_new = None, None
-    if shuffle_strategy == "random":
-        perms = torch.rand(m, nc, device=batch.xc.device).argsort(dim=1)
-        perm_x = perms.unsqueeze(-1).expand(-1, -1, dx)
-        perm_y = perms.unsqueeze(-1).expand(-1, -1, dy)
-        xc_new = torch.gather(batch.xc, 1, perm_x) 
-        yc_new = torch.gather(batch.yc, 1, perm_y)
-    elif shuffle_strategy == "GreedyBestPriorLogP":
-        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best", select="logp")
-    elif shuffle_strategy == "GreedyWorstPriorLogP":
-        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="worst", select="logp")
-    elif shuffle_strategy == "GreedyMedianPriorLogP":
-        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="median", select="logp")
-    elif shuffle_strategy == "GreedyBestPriorVar":
-        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best", select="var")
-    elif shuffle_strategy == "GreedyWorstPriorVar":
-        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="worst", select="var")
-    elif shuffle_strategy == "GreedyMedianPriorVar":
-        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="median", select="var")
-    
-    x = torch.cat((xc_new, batch.xt), dim=1)
-    y = torch.cat((yc_new, batch.yt), dim=1)
-    batch_new = Batch(xc=xc_new, yc=yc_new, xt=batch.xt, yt=batch.yt, y=y, x=x)
-    return batch_new
-
-
-# Evaluates a given models performance. Includes the option for a small number of defined strategies.
-@torch.no_grad
-def eval_model(model, test_set, shuffle_strategy, device="cuda"):
-    shuffle_time = 0
-    inf_time = 0
-    stat_time = 0
-    N = len(test_set)
-    log_liks, rmse_vals, gt_log_liks = torch.empty(N, device=device), torch.empty(N, device=device), torch.empty(N, device=device)
-    i=0
-    for batch_test in tqdm(test_set, desc="Evaluating Model on One Train Set"):
-        # Shuffles data using defined permute strategy
-        start_shuff_t = time.time()
-        batch = shuffle_batch(model, batch_test, shuffle_strategy)
-        shuffle_time += time.time() - start_shuff_t
-        # Model LL and rmse
-        m, nt, _ = batch.yt.shape
-        # Gets predictive distribution from model
-        start_inf_t = time.time()
-        pred_dist = np_pred_fn(model, batch, predict_without_yt_tnpa=True)
-        inf_time += time.time() - start_inf_t
-        stat_start_time = time.time()
-        ll = pred_dist.log_prob(batch.yt).sum() / (m * nt)
-        rmse = nn.functional.mse_loss(pred_dist.mean, batch.yt).sqrt()
-
-        # GT LL - may need to wrap this in if statement in future datasets
-        gt_loglik = batch_test.gtll
-        stat_time += time.time() - stat_start_time
-
-        # Adds data
-        log_liks[i] = ll
-        rmse_vals[i] = rmse
-        gt_log_liks[i] = gt_loglik
-        i+=1
-
-    # Print times
-    print_times_tracked = True
-    if print_times_tracked: print(f'Inf time {inf_time:.2f}, Stat time {stat_time:.2f}, Shuffle time {shuffle_time:.2f}')
-
-    # Gathers results
-    results = {
-        "mean_ll": torch.mean(log_liks).item(),
-        "std_ll": torch.std(log_liks).item(),
-        "mean_rmse": torch.mean(rmse_vals).item(),
-        "std_rmse": torch.std(rmse_vals).item(),
-        "mean_gt_ll": torch.mean(gt_log_liks).item(),
-        "std_gt_ll": torch.std(gt_log_liks).item(),
-    }
-    return results
-
-# Evaluates model performance over a number of passes of the test set (e.g. to account for noise etc)
-def eval_model_over_permutations(model, test_set, no_reps: int = 1, shuffle_strategy: str = "random"):
-    model.eval()
-    num_params = sum(p.numel() for p in model.parameters())
-    mean_lls, std_lls, mean_rmse_vals, std_rmse_vals, mean_gt_lls, std_gt_lls, timings = [], [], [], [], [], [], []
-    for _ in tqdm(range(no_reps), desc="Evaluating model over multiple test sets"):
-        start_t = time.time()
-        result = eval_model(model, test_set, shuffle_strategy)
-        timings.append(time.time() - start_t)
-        mean_lls.append(result["mean_ll"])
-        std_lls.append(result["std_ll"])
-        mean_rmse_vals.append(result["mean_rmse"])
-        std_rmse_vals.append(result["std_rmse"])
-        mean_gt_lls.append(result["mean_gt_ll"])
-        std_gt_lls.append(result["std_gt_ll"])
-    # Gathers results
-    results = {
-        "num_params": num_params,
-        "mean_lls": mean_lls,
-        "std_lls": std_lls,
-        "mean_rmse_vals": mean_rmse_vals,
-        "std_rmse_vals": std_rmse_vals,
-        "mean_gt_lls": mean_gt_lls,
-        "std_gt_lls": std_gt_lls,
-        "time": timings,
-    }
-    return results
+from collections import defaultdict
+from typing import DefaultDict, Dict, List, Tuple
+from torch import nn
+from copy import deepcopy
 
 # Loads data effeciently for fast computation
 def load_data(data_gen, device="cuda"):
@@ -170,10 +64,9 @@ def load_data(data_gen, device="cuda"):
         gt_loglik = gt_loglik.sum() / (m * nt)
         b.gtll = gt_loglik.to(device, non_blocking=True)
         b.gt_pred = None
-    data = [b for b in data_gen]
+    data = list(data_gen)
     print(f'Data Time {time.time() - start_t:.2f}')
     return data
-        
 
 # Gets rbf kernel with rangesame default test params used
 def get_rbf_rangesame_test_set():
@@ -201,33 +94,6 @@ def get_rbf_rangesame_test_set():
     data = load_data(gen_test)
     return data, "RBF"
 
-# Main function used to handle flow of evaluating model and plotting the results
-def models_perf_main(model_list, test_data):
-    test_set, test_data_name = test_data
-    folder_name = "experiments/plot_results/eval_set/"
-    txt_file_summary = f'Summary over eval data set {test_data_name}'
-    for (yml_path, wandb_id, shuffle_strategy, model_name, special_args, no_reps) in model_list:
-        model = get_model(yml_path, wandb_id, seed=False) # Loads model
-        if special_args.startswith("TNPAR_"):
-            model.num_samples = int(special_args.split("_")[1])
-        results = eval_model_over_permutations(model, test_set, no_reps, shuffle_strategy)
-
-        summary_block = f"""
-        ----------------------------
-        Model: {model_name}
-        Params: {results["num_params"]}
-        Mean_LLs: {results["mean_lls"]}
-        Std_LLs: {results["std_lls"]}
-        Mean_RMSEs: {results["mean_rmse_vals"]}
-        Std_RMSEs: {results["std_rmse_vals"]}
-        Mean_GT_LLs: {results["mean_gt_lls"]}
-        Std_GT_LLs: {results["std_gt_lls"]}
-        Times: {results["time"]}
-        """
-        txt_file_summary += summary_block
-        print(summary_block)
-    with open(folder_name + 'eval_summary.txt', 'w') as file_object:
-        file_object.write(txt_file_summary)
 
 # List of models to be tested, adjust this as required
 def get_model_list():
@@ -237,7 +103,7 @@ def get_model_list():
         1)
     tnp_causal = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
         'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', 'random', "IncTNP", "",
-        10)
+        1)
     tnp_causal_batched = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'random', "IncTNP (Batched)", "",
         10)
@@ -283,12 +149,200 @@ def get_model_list():
     models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
         greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
         greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
-    models = [tnp_causal]
+    models = [tnp_causal, tnp_causal_batched]
     return models
 
-if __name__ == "__main__":
-    start_t = time.time()
-    pl.seed_everything(1) #  Sets seed of randomness for reproducibility
-    models_perf_main(get_model_list(), get_rbf_rangesame_test_set())
-    print(f'Runtime: {time.time()-start_t:.2f}s')
+
+def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
+    assert shuffle_strategy in {"random", "GreedyBestPriorLogP", "GreedyWorstPriorLogP", "GreedyMedianPriorLogP", "GreedyBestPriorVar", "GreedyWorstPriorVar", "GreedyMedianPriorVar"}, "Invalid context shuffle strategy"
+    m, nc, dx = batch.xc.shape
+    _, nt, dy = batch.yt.shape
+    # Converts batch to cuda
+    #batch.xc, batch.yc, batch.xt, batch.yt, batch.x, batch.y = batch.xc.to(device), batch.yc.to(device), batch.xt.to(device), batch.yt.to(device), batch.x.to(device), batch.y.to(device)
+    xc_new, yc_new = None, None
+    if shuffle_strategy == "random":
+        perms = torch.rand(m, nc, device=batch.xc.device).argsort(dim=1)
+        perm_x = perms.unsqueeze(-1).expand(-1, -1, dx)
+        perm_y = perms.unsqueeze(-1).expand(-1, -1, dy)
+        xc_new = torch.gather(batch.xc, 1, perm_x) 
+        yc_new = torch.gather(batch.yc, 1, perm_y)
+    elif shuffle_strategy == "GreedyBestPriorLogP":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best", select="logp")
+    elif shuffle_strategy == "GreedyWorstPriorLogP":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="worst", select="logp")
+    elif shuffle_strategy == "GreedyMedianPriorLogP":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="median", select="logp")
+    elif shuffle_strategy == "GreedyBestPriorVar":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best", select="var")
+    elif shuffle_strategy == "GreedyWorstPriorVar":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="worst", select="var")
+    elif shuffle_strategy == "GreedyMedianPriorVar":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="median", select="var")
     
+    x = torch.cat((xc_new, batch.xt), dim=1)
+    y = torch.cat((yc_new, batch.yt), dim=1)
+    batch_new = Batch(xc=xc_new, yc=yc_new, xt=batch.xt, yt=batch.yt, y=y, x=x)
+    return batch_new
+
+# Repeats batch with shuffle each time and then combines them - shuffling each time
+def _replicate_batch(
+    model, batch: Batch, n_rep: int, shuffle_strategy: str
+) -> Batch:
+    reps: List[Batch] = []
+    # Shuffles data
+    for _ in range(n_rep):
+        batch_copy = deepcopy(batch) # Deep copy as shuffle acts in place
+        reps.append(shuffle_batch(model, batch_copy, shuffle_strategy))
+
+    xc = torch.cat([b.xc for b in reps], dim=0)
+    yc = torch.cat([b.yc for b in reps], dim=0)
+    xt = torch.cat([b.xt for b in reps], dim=0)
+    yt = torch.cat([b.yt for b in reps], dim=0)
+    x = torch.cat([b.x for b in reps], dim=0)
+    y = torch.cat([b.y for b in reps], dim=0)
+
+    big_batch = Batch(xc=xc, yc=yc, xt=xt, yt=yt, x=x, y=y)
+
+    if hasattr(batch, "gtll"):
+        big_batch.gtll = batch.gtll.repeat(n_rep)
+    return big_batch
+
+
+@torch.no_grad
+def fast_eval_model(
+    model,
+    test_set: List[Batch],
+    n_permutations: int = 100,
+    shuffle_strategy: str = "random",
+    max_size_gpu: int = 2048,
+    device: str = "cuda",
+):
+
+    model.eval()
+    device = torch.device(device)
+    model.to(device) 
+
+    # Buckets by context length (our API requires same size nc atm so need to do this which is big cause of ineffeciency)
+    buckets: DefaultDict[int, List[Batch]] = defaultdict(list)
+    for batch in test_set:
+        nc = batch.xc.shape[1]
+        buckets[nc].append(batch)
+
+
+    sum_lls_perm = [0.0] * n_permutations
+    count_perm = [0] * n_permutations
+    ll_sum = rmse_sum = gtll_sum = 0.0
+    ll_sq_sum = rmse_sq_sum = gtll_sq_sum = 0.0
+    total_samples = 0
+
+    shuffle_time = inf_time = stat_time = 0.0
+    i = 0
+
+    with torch.no_grad():
+        for nc, batch_group in buckets.items():
+            desc = f"nc={nc:02d}"
+            for base_batch in tqdm(batch_group, desc=desc, leave=False):
+                gt_ll= base_batch.gtll.item() # GT LL
+                gtll_sum += gt_ll
+                gtll_sq_sum += (gt_ll ** 2)
+                i+=1
+                m = base_batch.xc.shape[0]  # Original batch size (e.g. m = 16)
+                no_reps_allowed = max(max_size_gpu // m, 1) # How many full shuffles can be put into gpu
+                # Loops through all permutations
+                processed = 0
+                while processed < n_permutations:
+                    n_rep = min(no_reps_allowed, n_permutations - processed)
+
+                    # Shuffles dataset and batches it
+                    t0 = time.time()
+                    big_batch = _replicate_batch(model, base_batch, n_rep, shuffle_strategy)
+                    shuffle_time += time.time() - t0
+
+                    # Prediction
+                    t1 = time.time()
+                    pred_dist = np_pred_fn(model, big_batch, predict_without_yt_tnpa=True)
+                    inf_time += time.time() - t1
+
+                    # Tracked stats
+                    t2 = time.time()
+                    n_tot, nt, _ = big_batch.yt.shape
+                    ll = pred_dist.log_prob(big_batch.yt).sum(dim=(1, 2)) / nt  # (n_tot,)
+                    rmse = nn.functional.mse_loss(pred_dist.mean, big_batch.yt, reduction="none")
+                    rmse = rmse.mean(dim=(1, 2)).sqrt()  # (n_tot,)
+
+    
+                    ll_rep = ll.view(n_rep, m).mean(1).cpu()
+                    for off, idx in enumerate(range(processed, processed + n_rep)):
+                        sum_lls_perm[idx] += ll_rep[off].item()
+                        count_perm[idx]   += 1
+
+                    # Welford online update
+                    ll_sum += ll.sum().item()
+                    rmse_sum += rmse.sum().item()
+
+                    ll_sq_sum += (ll ** 2).sum().item()
+                    rmse_sq_sum += (rmse ** 2).sum().item()
+
+                    total_samples += n_tot
+                    stat_time += time.time() - t2
+
+                    processed += n_rep
+
+    def _mean_std_calc(sum_, sq_sum, n_calc):
+        mean = sum_ / n_calc
+        var = max(sq_sum / (n_calc) - mean ** 2, 0.0)
+        return mean, var ** 0.5
+
+    mean_ll, std_ll = _mean_std_calc(ll_sum, ll_sq_sum, n_calc=total_samples)
+    mean_rmse, std_rmse = _mean_std_calc(rmse_sum, rmse_sq_sum, n_calc=total_samples)
+    mean_gtll, std_gtll = _mean_std_calc(gtll_sum, gtll_sq_sum, n_calc=i)
+    mean_lls = [s / c if c else float("nan") for s, c in zip(sum_lls_perm, count_perm)]
+
+    print(f"\n Timing shuffle: {shuffle_time:.1f}s  |  inference: {inf_time:.1f}s  |  stats: {stat_time:.1f}s")
+
+    return {
+        "mean_ll": mean_ll,
+        "std_ll": std_ll,
+        "mean_rmse": mean_rmse,
+        "std_rmse": std_rmse,
+        "mean_gt_ll": mean_gtll,
+        "std_gt_ll": std_gtll,
+        "total_samples": total_samples,
+        "shuffle_time": shuffle_time,
+        "inference_time": inf_time,
+        "stat_time": stat_time,
+        "mean_lls": mean_lls
+    }
+
+def run_eval():
+    MAX_SIZE_GPU = 8192  # Max size - tune with GPU used to maximisie throughput
+    N_PERMUTATIONS = 10 # How many permutations of dataset to test
+    pl.seed_everything(1)
+
+    folder_name = "experiments/plot_results/eval_set/"
+    test_data = get_rbf_rangesame_test_set()
+    test_set, set_name = test_data
+    summary_txt = f'Summary over eval data set {set_name}'
+    for yml_path, wandb_id, shuffle_strategy, model_name, special_args, _ in get_model_list():
+        model = get_model(yml_path, wandb_id, seed=False)
+        if special_args.startswith("TNPAR_"):
+            model.num_samples = int(special_args.split("_")[1])
+
+        res = fast_eval_model(
+            model,
+            test_set,
+            n_permutations=N_PERMUTATIONS,
+            shuffle_strategy=shuffle_strategy,
+            max_size_gpu=MAX_SIZE_GPU,
+            device="cuda",
+        )
+        summary_txt += "\n" + ("-" * 20) + "\n" + f"Model: {model_name}"
+        for k, v in res.items():
+            summary_txt += "\n" + f"{k:>15}: {v}"
+        print(summary_txt)
+    with open(folder_name + 'eval_summary_bucketed.txt', 'w') as file_object:
+        file_object.write(summary_txt)
+
+
+if __name__ == "__main__":
+    run_eval()

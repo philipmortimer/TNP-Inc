@@ -237,7 +237,7 @@ def get_model_list():
         1)
     tnp_causal = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
         'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', 'random', "IncTNP", "",
-        10)
+        1)
     tnp_causal_batched = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'random', "IncTNP (Batched)", "",
         10)
@@ -283,7 +283,7 @@ def get_model_list():
     models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
         greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
         greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
-    #models = [tnp_causal]
+    models = [tnp_causal, tnp_causal_batched]
     return models
 
 if __name__ == "__main__":
