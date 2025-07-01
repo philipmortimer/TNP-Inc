@@ -46,6 +46,13 @@ from typing import DefaultDict, Dict, List, Tuple
 from torch import nn
 from copy import deepcopy
 
+# Compiled pred fn - investigate this but no python 3.12 support so need to make new conda env atm
+#compiled_pred_fn = torch.compile(
+#    partial(np_pred_fn, predict_without_yt_tnpa=True),
+#    mode="reduce-overhead",
+#    fullgraph=True,
+#)
+
 # Loads data effeciently for fast computation
 def load_data(data_gen, device="cuda"):
     start_t = time.time()
@@ -96,20 +103,20 @@ def get_rbf_rangesame_test_set():
 
 
 # List of models to be tested, adjust this as required
-def get_model_list():
+def get_model_list(N_PERMUTATIONS, ar_runs):
     # Models available
     tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 
         'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', 'random', "TNP-D", "",
         1)
     tnp_causal = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
         'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', 'random', "IncTNP", "",
-        1)
+        N_PERMUTATIONS)
     tnp_causal_batched = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'random', "IncTNP (Batched)", "",
-        10)
+        N_PERMUTATIONS)
     tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'random', "IncTNP-Prior (Batched)", "",
-        10)
+        N_PERMUTATIONS)
     # TNP Causal Batched Prior Greedy Strategies
     greedy_best_tnp_causal_batched_prior_logp = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
         'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyBestPriorLogP', 
@@ -137,20 +144,20 @@ def get_model_list():
         1)
     # TNP AR models
     ar_yml, ar_mod, name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
-    tnp_ar_5 = (ar_yml, ar_mod, 'random', name + " (5)", "TNPAR_5", 2)
-    tnp_ar_50 = (ar_yml, ar_mod, 'random', name + " (50)", "TNPAR_50", 2)
-    tnp_ar_100 = (ar_yml, ar_mod, 'random', name + " (100)", "TNPAR_100", 2)
+    tnp_ar_5 = (ar_yml, ar_mod, 'random', name + " (5)", "TNPAR_5", ar_runs)
+    tnp_ar_50 = (ar_yml, ar_mod, 'random', name + " (50)", "TNPAR_50", ar_runs)
+    tnp_ar_100 = (ar_yml, ar_mod, 'random', name + " (100)", "TNPAR_100", ar_runs)
     
     # Defines models to be used
-    models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
+    models_all = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
         greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
         greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var,
         tnp_ar_5, tnp_ar_50, tnp_ar_100]
-    models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
+    models_no_ar = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
         greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
         greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
-    models = [tnp_causal, tnp_causal_batched]
-    return models
+    models_ar = [tnp_ar_5, tnp_ar_50, tnp_ar_100]
+    return models_no_ar
 
 
 def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
@@ -186,25 +193,37 @@ def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
 
 # Repeats batch with shuffle each time and then combines them - shuffling each time
 def _replicate_batch(
-    model, batch: Batch, n_rep: int, shuffle_strategy: str
+    model, batch: Batch, n_rep: int, shuffle_strategy: str, perms: Optional[torch.Tensor] = None,
 ) -> Batch:
-    reps: List[Batch] = []
-    # Shuffles data
-    for _ in range(n_rep):
-        batch_copy = deepcopy(batch) # Deep copy as shuffle acts in place
-        reps.append(shuffle_batch(model, batch_copy, shuffle_strategy))
+    # Adds precomputed support for random shuffling
+    if shuffle_strategy == "random" and perms is not None:
+        m, nc, dx = batch.xc.shape
+        _, _, dy  = batch.yc.shape
+        # Repeats tensors
+        xc_rep = batch.xc.repeat(n_rep, 1, 1)
+        yc_rep = batch.yc.repeat(n_rep, 1, 1)
+        xt_rep = batch.xt.repeat(n_rep, 1, 1)
+        yt_rep = batch.yt.repeat(n_rep, 1, 1)
 
-    xc = torch.cat([b.xc for b in reps], dim=0)
-    yc = torch.cat([b.yc for b in reps], dim=0)
-    xt = torch.cat([b.xt for b in reps], dim=0)
-    yt = torch.cat([b.yt for b in reps], dim=0)
-    x = torch.cat([b.x for b in reps], dim=0)
-    y = torch.cat([b.y for b in reps], dim=0)
+        # Broadcast permutation indices
+        perm_rows = perms.repeat_interleave(m, 0)
+        perm_x = perm_rows.unsqueeze(-1).expand(-1, -1, dx)
+        perm_y = perm_rows.unsqueeze(-1).expand(-1, -1, dy)
 
-    big_batch = Batch(xc=xc, yc=yc, xt=xt, yt=yt, x=x, y=y)
+        # Gathers shuffled data
+        xc_new = torch.gather(xc_rep, 1, perm_x)
+        yc_new = torch.gather(yc_rep, 1, perm_y)
 
-    if hasattr(batch, "gtll"):
-        big_batch.gtll = batch.gtll.repeat(n_rep)
+        big_batch = Batch(xc=xc_new, yc=yc_new, xt=xt_rep, yt=yt_rep, x=None, y=None)
+    else: # Default no vectorised approach
+        reps = [shuffle_batch(model, batch, shuffle_strategy) for _ in range(n_rep)]
+        xc = torch.cat([b.xc for b in reps], dim=0)
+        yc = torch.cat([b.yc for b in reps], dim=0)
+        xt = torch.cat([b.xt for b in reps], dim=0)
+        yt = torch.cat([b.yt for b in reps], dim=0)
+
+        big_batch = Batch(xc=xc, yc=yc, xt=xt, yt=yt, x=None, y=None)
+
     return big_batch
 
 
@@ -215,9 +234,9 @@ def fast_eval_model(
     n_permutations: int = 100,
     shuffle_strategy: str = "random",
     max_size_gpu: int = 2048,
+    USE_HALF_PREC: bool = False,
     device: str = "cuda",
 ):
-
     model.eval()
     device = torch.device(device)
     model.to(device) 
@@ -228,7 +247,6 @@ def fast_eval_model(
         nc = batch.xc.shape[1]
         buckets[nc].append(batch)
 
-
     sum_lls_perm = [0.0] * n_permutations
     count_perm = [0] * n_permutations
     ll_sum = rmse_sum = gtll_sum = 0.0
@@ -237,7 +255,6 @@ def fast_eval_model(
 
     shuffle_time = inf_time = stat_time = 0.0
     i = 0
-
     with torch.no_grad():
         for nc, batch_group in buckets.items():
             desc = f"nc={nc:02d}"
@@ -255,20 +272,32 @@ def fast_eval_model(
 
                     # Shuffles dataset and batches it
                     t0 = time.time()
-                    big_batch = _replicate_batch(model, base_batch, n_rep, shuffle_strategy)
+                    if shuffle_strategy == "random": perms_slice = torch.rand(n_rep, nc, device=device).argsort(1)
+                    else: perms_slice = None
+                    big_batch = _replicate_batch(model, base_batch, n_rep, shuffle_strategy, perms=perms_slice)
+                    if USE_HALF_PREC:
+                        big_batch.xc = big_batch.xc.half()
+                        big_batch.yc = big_batch.yc.half()
+                        big_batch.xt = big_batch.xt.half()
+                        big_batch.yt = big_batch.yt.half()
                     shuffle_time += time.time() - t0
 
                     # Prediction
                     t1 = time.time()
-                    pred_dist = np_pred_fn(model, big_batch, predict_without_yt_tnpa=True)
+                    if USE_HALF_PREC:
+                        with torch.cuda.amp.autocast(dtype=torch.float16):
+                            pred_dist = np_pred_fn(model, big_batch, predict_without_yt_tnpa=True)
+                    else: pred_dist = np_pred_fn(model, big_batch, predict_without_yt_tnpa=True)
                     inf_time += time.time() - t1
 
                     # Tracked stats
                     t2 = time.time()
+                    mean_f32 = pred_dist.mean.float()
+                    yt_f32 = big_batch.yt.float()
                     n_tot, nt, _ = big_batch.yt.shape
-                    ll = pred_dist.log_prob(big_batch.yt).sum(dim=(1, 2)) / nt  # (n_tot,)
-                    rmse = nn.functional.mse_loss(pred_dist.mean, big_batch.yt, reduction="none")
-                    rmse = rmse.mean(dim=(1, 2)).sqrt()  # (n_tot,)
+                    ll = pred_dist.log_prob(big_batch.yt).float().sum(dim=(1, 2)) / nt
+                    rmse = nn.functional.mse_loss(mean_f32, yt_f32, reduction="none")
+                    rmse = rmse.mean(dim=(1, 2)).sqrt()
 
     
                     ll_rep = ll.view(n_rep, m).mean(1).cpu()
@@ -298,7 +327,7 @@ def fast_eval_model(
     mean_gtll, std_gtll = _mean_std_calc(gtll_sum, gtll_sq_sum, n_calc=i)
     mean_lls = [s / c if c else float("nan") for s, c in zip(sum_lls_perm, count_perm)]
 
-    print(f"\n Timing shuffle: {shuffle_time:.1f}s  |  inference: {inf_time:.1f}s  |  stats: {stat_time:.1f}s")
+    if False: print(f"\n Timing shuffle: {shuffle_time:.1f}s  |  inference: {inf_time:.1f}s  |  stats: {stat_time:.1f}s")
 
     return {
         "mean_ll": mean_ll,
@@ -315,33 +344,46 @@ def fast_eval_model(
     }
 
 def run_eval():
-    MAX_SIZE_GPU = 8192  # Max size - tune with GPU used to maximisie throughput
-    N_PERMUTATIONS = 10 # How many permutations of dataset to test
+    MAX_SIZE_GPU = 4096  # Max size - tune with GPU used to maximisie throughput
+    N_PERMUTATIONS = 1_000_000 # How many permutations of dataset to test
+    ar_runs = 5 # How many TNP A runs per model to try - if TNPA is being included
+    USE_HALF_PREC = True # Use float16?
     pl.seed_everything(1)
 
     folder_name = "experiments/plot_results/eval_set/"
     test_data = get_rbf_rangesame_test_set()
     test_set, set_name = test_data
-    summary_txt = f'Summary over eval data set {set_name}'
-    for yml_path, wandb_id, shuffle_strategy, model_name, special_args, _ in get_model_list():
+    file_txt = f'Summary over eval data set {set_name}'
+    print(file_txt)
+    model_list = get_model_list(N_PERMUTATIONS=N_PERMUTATIONS, ar_runs=ar_runs)
+    for yml_path, wandb_id, shuffle_strategy, model_name, special_args, perms_over in model_list:
         model = get_model(yml_path, wandb_id, seed=False)
+        if USE_HALF_PREC: model = model.half()
         if special_args.startswith("TNPAR_"):
             model.num_samples = int(special_args.split("_")[1])
 
         res = fast_eval_model(
             model,
             test_set,
-            n_permutations=N_PERMUTATIONS,
+            n_permutations=perms_over,
             shuffle_strategy=shuffle_strategy,
             max_size_gpu=MAX_SIZE_GPU,
+            USE_HALF_PREC=USE_HALF_PREC,
             device="cuda",
         )
-        summary_txt += "\n" + ("-" * 20) + "\n" + f"Model: {model_name}"
+
+        summary_block = "\n" + ("-" * 20) + "\n" + f"Model: {model_name}"
         for k, v in res.items():
-            summary_txt += "\n" + f"{k:>15}: {v}"
-        print(summary_txt)
+            if k == "mean_lls":
+                file_out = f"{folder_name}data/{model_name.replace(' ', '_')}_mean_lls_{set_name}.txt"
+                np.savetxt(file_out, np.array(v, dtype=np.float32), fmt="%.12f")
+                summary_block += f"\n{ k:>15}: wrote {len(v)} values to {file_out}"
+            else:
+                summary_block += f"\n{ k:>15}: {v}"
+        file_txt += summary_block
+        print(summary_block)
     with open(folder_name + 'eval_summary_bucketed.txt', 'w') as file_object:
-        file_object.write(summary_txt)
+        file_object.write(file_txt)
 
 
 if __name__ == "__main__":
