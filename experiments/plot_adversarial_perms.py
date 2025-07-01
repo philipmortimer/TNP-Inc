@@ -646,7 +646,7 @@ if __name__ == "__main__":
     masked_model.eval()
 
     #masked_model = get_model('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
-    #    'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v180')
+     #   'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v180')
     #masked_model.eval()
 
     # Sorts context in order

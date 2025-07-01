@@ -1,4 +1,4 @@
-# Core idea is to measure the peformance of models over a given test set (especially order senstivie models and batching strategies for that)
+# Evaluation over the test set using a bucketed approach - harder to read but more effecient
 import numpy as np
 import torch
 from scipy import stats
@@ -283,7 +283,7 @@ def get_model_list():
     models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
         greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
         greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
-    #models = [tnp_causal]
+    models = [tnp_causal]
     return models
 
 if __name__ == "__main__":
