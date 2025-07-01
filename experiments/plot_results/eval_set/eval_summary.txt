@@ -1,23 +1,111 @@
 Summary over eval data set RBF
         ----------------------------
-        Model: IncTNP-Prior (Batched) - Best Greedy
-        Params: 1058946
-        Mean_LLs: [0.379262066737283]
-        Std_LLs: [0.49539266097474827]
-        Mean_RMSEs: [0.23565000694361515]
-        Std_RMSEs: [0.1949867825504052]
-        Mean_GT_LLs: [0.4589963799999168]
-        Std_GT_LLs: [0.4734110801920584]
-        Times: [79.60950684547424]
+        Model: TNP-D
+        Params: 1058818
+        Mean_LLs: [0.31831749412958743]
+        Std_LLs: [0.4802175976540691]
+        Mean_RMSEs: [0.24145426801987924]
+        Std_RMSEs: [0.1933168099543147]
+        Mean_GT_LLs: [0.4589964089318528]
+        Std_GT_LLs: [0.47341105018394447]
+        Times: [15.33391523361206]
         
         ----------------------------
-        Model: IncTNP-Prior (Batched) - Worst
+        Model: IncTNP
+        Params: 1058818
+        Mean_LLs: [0.3753564281578292]
+        Std_LLs: [0.5062047826719275]
+        Mean_RMSEs: [0.23467137286206707]
+        Std_RMSEs: [0.19692703422901287]
+        Mean_GT_LLs: [0.45899640675816045]
+        Std_GT_LLs: [0.4734110383305312]
+        Times: [1.8349719047546387]
+        
+        ----------------------------
+        Model: IncTNP (Batched)
+        Params: 1058818
+        Mean_LLs: [0.3997492791277182]
+        Std_LLs: [0.5027758650353386]
+        Mean_RMSEs: [0.231431340391282]
+        Std_RMSEs: [0.19611156384544062]
+        Mean_GT_LLs: [0.45899640675816045]
+        Std_GT_LLs: [0.4734110383305312]
+        Times: [1.918008804321289]
+        
+        ----------------------------
+        Model: IncTNP-Prior (Batched)
+        Params: 1058946
+        Mean_LLs: [0.38901731243458926]
+        Std_LLs: [0.49993657110771605]
+        Mean_RMSEs: [0.23280577498371713]
+        Std_RMSEs: [0.19522055787429385]
+        Mean_GT_LLs: [0.45899640675816045]
+        Std_GT_LLs: [0.4734110383305312]
+        Times: [1.7906672954559326]
+        
+        ----------------------------
+        Model: IncTNP-Prior (Batched) - Best Greedy LL
         Params: 1058946
         Mean_LLs: [0.379262066737283]
         Std_LLs: [0.49539266097474827]
         Mean_RMSEs: [0.23565000694361515]
         Std_RMSEs: [0.1949867825504052]
-        Mean_GT_LLs: [0.4589963819762488]
-        Std_GT_LLs: [0.4734110709130431]
-        Times: [56.51767945289612]
+        Mean_GT_LLs: [0.45899640675816045]
+        Std_GT_LLs: [0.4734110383305312]
+        Times: [64.71846222877502]
+        
+        ----------------------------
+        Model: IncTNP-Prior (Batched) - Worst Greedy LL
+        Params: 1058946
+        Mean_LLs: [0.3902452177062514]
+        Std_LLs: [0.5006957371625825]
+        Mean_RMSEs: [0.23215457185870036]
+        Std_RMSEs: [0.1952179252305846]
+        Mean_GT_LLs: [0.45899640675816045]
+        Std_GT_LLs: [0.4734110383305312]
+        Times: [64.4701406955719]
+        
+        ----------------------------
+        Model: IncTNP-Prior (Batched) - Median Greedy LL
+        Params: 1058946
+        Mean_LLs: [0.38693291938398033]
+        Std_LLs: [0.49875801053239627]
+        Mean_RMSEs: [0.23386525007663295]
+        Std_RMSEs: [0.19574121091582228]
+        Mean_GT_LLs: [0.45899640675816045]
+        Std_GT_LLs: [0.4734110383305312]
+        Times: [64.90006947517395]
+        
+        ----------------------------
+        Model: IncTNP-Prior (Batched) - Best Greedy Var
+        Params: 1058946
+        Mean_LLs: [0.39084207200085075]
+        Std_LLs: [0.49897840070743416]
+        Mean_RMSEs: [0.23227910886635073]
+        Std_RMSEs: [0.1952860293756174]
+        Mean_GT_LLs: [0.45899640675816045]
+        Std_GT_LLs: [0.4734110383305312]
+        Times: [63.58708143234253]
+        
+        ----------------------------
+        Model: IncTNP-Prior (Batched) - Worst Greedy Var
+        Params: 1058946
+        Mean_LLs: [0.37687652428758156]
+        Std_LLs: [0.4944629812577528]
+        Mean_RMSEs: [0.23590162105392665]
+        Std_RMSEs: [0.19481573160763724]
+        Mean_GT_LLs: [0.45899640675816045]
+        Std_GT_LLs: [0.4734110383305312]
+        Times: [64.33672261238098]
+        
+        ----------------------------
+        Model: IncTNP-Prior (Batched) - Median Greedy Var
+        Params: 1058946
+        Mean_LLs: [0.3869841546002135]
+        Std_LLs: [0.49802921574059417]
+        Mean_RMSEs: [0.2334129780647345]
+        Std_RMSEs: [0.1950696117466294]
+        Mean_GT_LLs: [0.45899640675816045]
+        Std_GT_LLs: [0.4734110383305312]
+        Times: [63.623051166534424]
         

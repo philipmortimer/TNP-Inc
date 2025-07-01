@@ -166,8 +166,9 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
     "xc: [m, nc, dx]", "yc: [m, nc, dy]"
     )
     @torch.no_grad()
-    def kv_cached_greedy_variance_ctx_builder(self, xc: torch.Tensor, yc: torch.Tensor, policy: str = "best"):
+    def kv_cached_greedy_variance_ctx_builder(self, xc: torch.Tensor, yc: torch.Tensor, policy: str = "best", select="logp"):
         assert policy in {"best", "worst", "median"}, "Invalid policy"
+        assert select in {"logp", "var"}, "Invalid selection criteria"
         device = xc.device
         # When deciding the context set ordering, start with an empty context set and build up greedily (or according to some shallow strategy)
         _, _, dx = xc.shape
@@ -196,13 +197,14 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
             # Query - performs inference on already conditioned context
             zt_candidates = self.encoder._preprocess_targets(xt_candidates, dy)
             pred_dist = self.likelihood(self.decoder(self.encoder.query(zt_candidates, kv_cache), xt_candidates)) # [m, n_remaining, dy] 
-            var = (pred_dist.log_prob(yt_candidates).sum(dim=(-1)) / (n_remaining * dy))
-            #var = pred_dist.variance.mean(-1) # [m, n_remaining]
+            
+            if select == "logp": metric = (pred_dist.log_prob(yt_candidates).sum(dim=(-1)) / (n_remaining * dy))
+            elif select == "var": metric = pred_dist.variance.mean(-1)
 
             # Selection strategy
-            if policy == "best": selected_points = var.argmax(dim=1) # [m]
-            elif policy == "worst": selected_points = var.argmin(dim=1) # [m]
-            else: selected_points = var.kthvalue(k=(n_remaining // 2) + 1, dim=1)[1] # [m] - median
+            if policy == "best": selected_points = metric.argmax(dim=1) # [m]
+            elif policy == "worst": selected_points = metric.argmin(dim=1) # [m]
+            else: selected_points = metric.kthvalue(k=(n_remaining // 2) + 1, dim=1)[1] # [m] - median
 
             # Selects points per batch
             selected_points_global = idx_remaining[batch_idx, selected_points] # [m]

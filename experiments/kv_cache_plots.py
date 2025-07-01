@@ -8,6 +8,8 @@ import time
 import matplotlib.pyplot as plt
 import matplotlib
 
+np.set_printoptions(threshold=np.inf) # Prints the whole numpy array for the file
+
 matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
 matplotlib.rcParams["axes.titlesize"]= 14

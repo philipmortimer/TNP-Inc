@@ -44,7 +44,7 @@ matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
 
 def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
-    assert shuffle_strategy in {"random", "GreedyBestPrior", "GreedyWorstPrior", "GreedyMedianPrior"}, "Invalid context shuffle strategy"
+    assert shuffle_strategy in {"random", "GreedyBestPriorLogP", "GreedyWorstPriorLogP", "GreedyMedianPriorLogP", "GreedyBestPriorVar", "GreedyWorstPriorVar", "GreedyMedianPriorVar"}, "Invalid context shuffle strategy"
     m, nc, dx = batch.xc.shape
     _, nt, dy = batch.yt.shape
     # Converts batch to cuda
@@ -56,13 +56,18 @@ def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
         perm_y = perms.unsqueeze(-1).expand(-1, -1, dy)
         xc_new = torch.gather(batch.xc, 1, perm_x) 
         yc_new = torch.gather(batch.yc, 1, perm_y)
-    elif shuffle_strategy == "GreedyBestPrior":
-        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best")
-        #xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best")
-    elif shuffle_strategy == "GreedyWorstPrior":
-        xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best")
-    elif shuffle_strategy == "GreedyMedianPrior":
-        xc_new, yc_new = model.greedy_variance_ctx_builder(batch.xc, batch.yc, policy="median")
+    elif shuffle_strategy == "GreedyBestPriorLogP":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best", select="logp")
+    elif shuffle_strategy == "GreedyWorstPriorLogP":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="worst", select="logp")
+    elif shuffle_strategy == "GreedyMedianPriorLogP":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="median", select="logp")
+    elif shuffle_strategy == "GreedyBestPriorVar":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="best", select="var")
+    elif shuffle_strategy == "GreedyWorstPriorVar":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="worst", select="var")
+    elif shuffle_strategy == "GreedyMedianPriorVar":
+        xc_new, yc_new = model.kv_cached_greedy_variance_ctx_builder(batch.xc, batch.yc, policy="median", select="var")
     
     x = torch.cat((xc_new, batch.xt), dim=1)
     y = torch.cat((yc_new, batch.yt), dim=1)
@@ -205,17 +210,29 @@ def get_model_list():
         'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'random', "IncTNP-Prior (Batched)", "",
         1)
     # TNP Causal Batched Prior Greedy Strategies
-    greedy_best_tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyBestPrior', 
-        "IncTNP-Prior (Batched) - Best Greedy", "",
+    greedy_best_tnp_causal_batched_prior_logp = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyBestPriorLogP', 
+        "IncTNP-Prior (Batched) - Best Greedy LL", "",
         1)
-    greedy_worst_tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyWorstPrior', 
-        "IncTNP-Prior (Batched) - Worst","",
+    greedy_worst_tnp_causal_batched_prior_logp = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyWorstPriorLogP', 
+        "IncTNP-Prior (Batched) - Worst Greedy LL","",
         1) 
-    greedy_median_tnp_causal_batched_prior = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyMedianPrior', 
-        "IncTNP-Prior (Batched) - Best Median", "",
+    greedy_median_tnp_causal_batched_prior_logp = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyMedianPriorLogP', 
+        "IncTNP-Prior (Batched) - Median Greedy LL", "",
+        1)
+    greedy_best_tnp_causal_batched_prior_var = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyBestPriorVar', 
+        "IncTNP-Prior (Batched) - Best Greedy Var", "",
+        1)
+    greedy_worst_tnp_causal_batched_prior_var = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyWorstPriorVar', 
+        "IncTNP-Prior (Batched) - Worst Greedy Var","",
+        1) 
+    greedy_median_tnp_causal_batched_prior_var = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'GreedyMedianPriorVar', 
+        "IncTNP-Prior (Batched) - Median Greedy Var", "",
         1)
     # TNP AR models
     ar_yml, ar_mod, name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
@@ -225,9 +242,12 @@ def get_model_list():
     
     # Defines models to be used
     models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
-        greedy_best_tnp_causal_batched_prior, greedy_worst_tnp_causal_batched_prior, greedy_median_tnp_causal_batched_prior,
+        greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
+        greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var,
         tnp_ar_5, tnp_ar_50, tnp_ar_100]
-    models = [greedy_best_tnp_causal_batched_prior, greedy_worst_tnp_causal_batched_prior]
+    models = [tnp_plain, tnp_causal, tnp_causal_batched, tnp_causal_batched_prior, 
+        greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
+        greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
     return models
 
 if __name__ == "__main__":
