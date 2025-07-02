@@ -51,10 +51,10 @@ class TNPEncoderMasked(nn.Module):
         zt = self.xy_encoder(zt)
 
         # Causal masked attention for context - using mask=None will get same behaviour as non masked
-        m, nc, _ = xc.shape # Number of context points
-        causal_mask = nn.Transformer.generate_square_subsequent_mask(nc, device=zc.device)
-        causal_mask = causal_mask.unsqueeze(0).expand(m, -1, -1) # [m, nc, nc]
-        zt = self.transformer_encoder(zc, zt, mask=causal_mask)
+        #m, nc, _ = xc.shape # Number of context points
+        #causal_mask = nn.Transformer.generate_square_subsequent_mask(nc, device=zc.device)
+        #causal_mask = causal_mask.unsqueeze(0).expand(m, -1, -1).contiguous() # [m, nc, nc]
+        zt = self.transformer_encoder(zc, zt)
         return zt
 
 

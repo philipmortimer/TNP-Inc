@@ -139,12 +139,12 @@ class IncTNPBatchedEncoderPrior(nn.Module):
         # Creates masks. 
         # A target point can only attend to preceding context points (plus dummy token)
         mask_ca = torch.tril(torch.ones(n, n + 1, dtype=torch.bool, device=zc.device), diagonal=0)
-        mask_ca = mask_ca.unsqueeze(0).expand(m, -1, -1) # [m, n, n + 1]
+        #mask_ca = mask_ca.unsqueeze(0).expand(m, -1, -1) # [m, n, n + 1]
         # Causal masking for context -> a context point can only attend to itself and previous context points (including dummy token).
-        mask_sa = torch.tril(torch.ones(n + 1, n + 1, dtype=torch.bool, device=zc.device), diagonal=0)
-        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n + 1, n + 1]
+        #mask_sa = torch.tril(torch.ones(n + 1, n + 1, dtype=torch.bool, device=zc.device), diagonal=0)
+        #mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n + 1, n + 1]
 
-        zt = self.transformer_encoder(zc, zt, mask_sa=mask_sa, mask_ca=mask_ca)
+        zt = self.transformer_encoder(zc, zt, mask_sa=None, use_causal=True, mask_ca=mask_ca)
         
         assert len(zt.shape) == 3 and zt.shape[0] == m and zt.shape[1] == n, "Return encoder shape wrong"
         return zt

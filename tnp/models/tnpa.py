@@ -55,7 +55,7 @@ class ARTNPEncoder(nn.Module):
         # Concats ctx with fake and real target points
         inp = self._construct_input(xc_encoded, yc_encoded, xt_encoded, yt_encoded)
         mask, num_tar = self._create_mask(num_ctx=xc.shape[1], num_tar=xt.shape[1], device=xt.device)
-        mask = mask.unsqueeze(0).expand(m, -1, -1) # [m, nc + 2*nt, nc+2*nt]  Broadcast mask to batch
+       # mask = mask.unsqueeze(0).expand(m, -1, -1) # [m, nc + 2*nt, nc+2*nt]  Broadcast mask to batch
 
         # Embeds data and runs through transformer encoder
         embeddings = self.xy_encoder(inp)

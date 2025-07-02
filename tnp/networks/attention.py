@@ -43,7 +43,7 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         "xq: [m, nq, dqk]",
         "xk: [m, nkv, dqk]",
         "xv: [m, nkv, dv]",
-        "mask: [m, nq, nkv]",
+        "mask: [nq, nkv]",
         "return: [m, nq, dv]",
     )
     def propagate(
@@ -74,14 +74,15 @@ class BaseMultiHeadAttention(nn.Module, ABC):
                 m, _, k_len, _ = k.shape
                 _, _, q_len, _ = q.shape
                 mask = torch.tril(torch.ones(k_len, k_len, dtype=torch.bool, device=k.device))[-q_len:]
-                mask = mask.unsqueeze(0).expand(m, -1, -1)
+                #mask = mask.unsqueeze(0).expand(m, -1, -1).contiguous()
                 use_causal = False
             
 
-        if mask is not None:
+        #if mask is not None:
             # Shape goes from [m, nq, nkv] -> [m, h, nq, nkv] by only changing view (no new memory allocated)
             # Code used mask = einops.repeat(mask, "m n1 n2 -> m h n1 n2", h=self.num_heads) previously. More readable but uses more memory.
-            mask = mask.unsqueeze(1).expand(-1, self.num_heads, -1, -1)
+        #    mask = mask.unsqueeze(1).expand(-1, self.num_heads, -1, -1)
+        #    mask = mask.contiguous()
 
         if self.linear:
             out = linear_attention(q, k, v, attn_mask=mask, scale=self.scale)
@@ -122,7 +123,7 @@ class MultiHeadSelfAttention(BaseMultiHeadAttention):
     ):
         super().__init__(qk_dim=embed_dim, v_dim=embed_dim, **kwargs)
 
-    @check_shapes("x: [m, n, d]", "mask: [m, n, n]", "return: [m, n, d]")
+    @check_shapes("x: [m, n, d]", "mask: [n, n]", "return: [m, n, d]")
     def forward(
         self,
         x: torch.Tensor,
@@ -146,7 +147,7 @@ class MultiHeadCrossAttention(BaseMultiHeadAttention):
     @check_shapes(
         "xq: [m, nq, dx]",
         "xkv: [m, nkv, dx]",
-        "mask: [m, nq, nkv]",
+        "mask: [nq, nkv]",
         "return: [m, nq, dx]",
     )
     def forward(

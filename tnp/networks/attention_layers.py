@@ -101,7 +101,7 @@ class MultiHeadSelfAttentionLayer(BaseMultiHeadAttentionLayer):
         attention = partial(MultiHeadSelfAttention, embed_dim=embed_dim)
         super().__init__(embed_dim=embed_dim, attention=attention, **kwargs)
 
-    @check_shapes("x: [m, n, d]", "mask: [m, n, n]", "return: [m, n, d]")
+    @check_shapes("x: [m, n, d]", "mask: [n, n]", "return: [m, n, d]")
     def attn_block(
         self,
         x: torch.Tensor,
@@ -113,7 +113,7 @@ class MultiHeadSelfAttentionLayer(BaseMultiHeadAttentionLayer):
         x = self.attn(x, mask=mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal)
         return self.attn_dropout(x)
 
-    @check_shapes("x: [m, n, d]", "mask: [m, n, n]", "return: [m, n, d]")
+    @check_shapes("x: [m, n, d]", "mask: [n, n]", "return: [m, n, d]")
     def forward(
         self, x: torch.Tensor, mask: Optional[torch.Tensor] = None, kv_cache: Optional[dict] = None, kv_tag: Optional[str] = None,
         use_causal: bool = False, # Whether to set causal flag in SDPA
@@ -134,7 +134,7 @@ class MultiHeadCrossAttentionLayer(BaseMultiHeadAttentionLayer):
         super().__init__(embed_dim=embed_dim, attention=attention, **kwargs)
 
     @check_shapes(
-        "xq: [m, nq, d]", "xkv: [m, nkv, d]", "mask: [m, nq, nkv]", "return: [m, n, d]"
+        "xq: [m, nq, d]", "xkv: [m, nkv, d]", "mask: [nq, nkv]", "return: [m, n, d]"
     )
     def attn_block(
         self,
@@ -146,7 +146,7 @@ class MultiHeadCrossAttentionLayer(BaseMultiHeadAttentionLayer):
         return self.attn_dropout(x)
 
     @check_shapes(
-        "xq: [m, nq, d]", "xkv: [m, nkv, d]", "mask: [m, nq, nkv]", "return: [m, n, d]"
+        "xq: [m, nq, d]", "xkv: [m, nkv, d]", "mask: [nq, nkv]", "return: [m, n, d]"
     )
     def forward(
         self, xq: torch.Tensor, xkv: torch.Tensor, mask: Optional[torch.Tensor] = None,

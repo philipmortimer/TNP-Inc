@@ -26,7 +26,7 @@ class TransformerEncoder(nn.Module):
 
         self.mhsa_layers = _get_clones(mhsa_layer, num_layers)
 
-    @check_shapes("x: [m, n, d]", "mask: [m, n, n]", "return: [m, n, d]")
+    @check_shapes("x: [m, n, d]", "mask: [n, n]", "return: [m, n, d]")
     def forward(
         self, x: torch.Tensor, mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
@@ -53,7 +53,7 @@ class TNPTransformerEncoder(nn.Module):
         )
 
     @check_shapes(
-        "xc: [m, nc, d]", "xt: [m, nt, d]", "mask: [m, nt, nc]", "return: [m, nt, d]"
+        "xc: [m, nc, d]", "xt: [m, nt, d]", "mask: [nt, nc]", "return: [m, nt, d]"
     )
     def forward(
         self, xc: torch.Tensor, xt: torch.Tensor, mask: Optional[torch.Tensor] = None
@@ -87,7 +87,7 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
         self.mhsa_layers = _get_clones(mhsa_layer, num_layers)
 
     @check_shapes(
-        "xc: [m, nc, d]", "xt: [m, nt, d]", "mask_sa: [m, nc, nc]", "mask_ca: [m, nt, nc]", "return: [m, nt, d]"
+        "xc: [m, nc, d]", "xt: [m, nt, d]", "mask_sa: [nc, nc]", "mask_ca: [nt, nc]", "return: [m, nt, d]"
     )
     def forward(
         self, xc: torch.Tensor, xt: torch.Tensor, mask_sa: Optional[torch.Tensor] = None, mask_ca: Optional[torch.Tensor] = None,
@@ -130,7 +130,7 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
         return zt
 
 
-# TNPTransformerEncoder but the mask is applied to the context (ie only the self attention)
+# TNPTransformerEncoder with causal self attention
 class TNPTransformerMaskedEncoder(nn.Module):
     def __init__(
         self,
@@ -141,24 +141,18 @@ class TNPTransformerMaskedEncoder(nn.Module):
         super().__init__()
 
         self.mhca_layers = _get_clones(mhca_layer, num_layers)
-        self.mhsa_layers = (
-            self.mhca_layers
-            if mhsa_layer is None
-            else _get_clones(mhsa_layer, num_layers)
-        )
+        self.mhsa_layers = _get_clones(mhsa_layer, num_layers)
 
     @check_shapes(
-        "xc: [m, nc, d]", "xt: [m, nt, d]", "mask: [m, nc, nc]", "return: [m, nt, d]"
+        "xc: [m, nc, d]", "xt: [m, nt, d]", "return: [m, nt, d]"
     )
     def forward(
-        self, xc: torch.Tensor, xt: torch.Tensor, mask: Optional[torch.Tensor] = None
+        self, xc: torch.Tensor, xt: torch.Tensor
     ) -> torch.Tensor:
 
         for mhsa_layer, mhca_layer in zip(self.mhsa_layers, self.mhca_layers):
             if isinstance(mhsa_layer, MultiHeadSelfAttentionLayer):
-                xc = mhsa_layer(xc, mask=mask)
-            elif isinstance(mhsa_layer, MultiHeadCrossAttentionLayer):
-                xc = mhsa_layer(xc, xc, mask=mask)
+                xc = mhsa_layer(xc, use_causal=True)
             else:
                 raise TypeError("Unknown layer type.")
 

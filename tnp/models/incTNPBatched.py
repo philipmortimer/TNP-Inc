@@ -64,10 +64,10 @@ class IncTNPBatchedEncoder(nn.Module):
         zc = self.xy_encoder(zc)
         zt = self.xy_encoder(zt)
 
-        mask_sa = torch.tril(torch.ones(nc, nc, dtype=torch.bool, device=zc.device), diagonal=0)
-        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
+        #mask_sa = torch.tril(torch.ones(nc, nc, dtype=torch.bool, device=zc.device), diagonal=0)
+        #mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
 
-        zt = self.transformer_encoder(zc, zt, mask_sa=mask_sa, mask_ca=None)
+        zt = self.transformer_encoder(zc, zt, mask_sa=None, use_causal=True, mask_ca=None)
         
         return zt       
 
@@ -100,12 +100,12 @@ class IncTNPBatchedEncoder(nn.Module):
         # Creates masks. 
         # A target point can only attend to preceding context points.
         mask_ca = torch.tril(torch.ones(n-1, n, dtype=torch.bool, device=zc.device), diagonal=0)
-        mask_ca = mask_ca.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
+        #mask_ca = mask_ca.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
         # Causal masking for context -> a context point can only attend to itself and previous context points.
-        mask_sa = torch.tril(torch.ones(n, n, dtype=torch.bool, device=zc.device), diagonal=0)
-        mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
+        #mask_sa = torch.tril(torch.ones(n, n, dtype=torch.bool, device=zc.device), diagonal=0)
+        #mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
 
-        zt = self.transformer_encoder(zc, zt, mask_sa=mask_sa, mask_ca=mask_ca)
+        zt = self.transformer_encoder(zc, zt, mask_sa=None, use_causal=True, mask_ca=mask_ca)
         
         assert len(zt.shape) == 3 and zt.shape[0] == m and zt.shape[1] == n - 1, "Return encoder shape wrong"
         return zt

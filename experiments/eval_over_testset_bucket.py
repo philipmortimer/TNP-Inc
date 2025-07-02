@@ -47,11 +47,12 @@ from torch import nn
 from copy import deepcopy
 
 # Compiled pred fn - investigate this but no python 3.12 support so need to make new conda env atm
-#compiled_pred_fn = torch.compile(
-#    partial(np_pred_fn, predict_without_yt_tnpa=True),
-#    mode="reduce-overhead",
-#    fullgraph=True,
-#)
+compiled_pred_fn = torch.compile(
+    partial(np_pred_fn, predict_without_yt_tnpa=True),
+    disable=True,
+    #mode="reduce-overhead",
+    #fullgraph=False,
+)
 
 # Loads data effeciently for fast computation
 def load_data(data_gen, device="cuda"):
@@ -157,7 +158,8 @@ def get_model_list(N_PERMUTATIONS, ar_runs):
         greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
         greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
     models_ar = [tnp_ar_5, tnp_ar_50, tnp_ar_100]
-    return models_no_ar
+    models_me = [tnp_causal, tnp_causal_batched, tnp_causal_batched_prior]
+    return models_me
 
 
 def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
@@ -286,8 +288,8 @@ def fast_eval_model(
                     t1 = time.time()
                     if USE_HALF_PREC:
                         with torch.cuda.amp.autocast(dtype=torch.float16):
-                            pred_dist = np_pred_fn(model, big_batch, predict_without_yt_tnpa=True)
-                    else: pred_dist = np_pred_fn(model, big_batch, predict_without_yt_tnpa=True)
+                            pred_dist = compiled_pred_fn(model, big_batch)#pred_dist = np_pred_fn(model, big_batch, predict_without_yt_tnpa=True)
+                    else: pred_dist = compiled_pred_fn(model, big_batch)#pred_dist = np_pred_fn(model, big_batch, predict_without_yt_tnpa=True)
                     inf_time += time.time() - t1
 
                     # Tracked stats
@@ -345,10 +347,12 @@ def fast_eval_model(
 
 def run_eval():
     MAX_SIZE_GPU = 4096  # Max size - tune with GPU used to maximisie throughput
-    N_PERMUTATIONS = 1_000_000 # How many permutations of dataset to test
+    N_PERMUTATIONS = 10_000 # How many permutations of dataset to test
     ar_runs = 5 # How many TNP A runs per model to try - if TNPA is being included
     USE_HALF_PREC = True # Use float16?
     pl.seed_everything(1)
+
+    # 4096 good for CBL - 32768 good for csd3
 
     folder_name = "experiments/plot_results/eval_set/"
     test_data = get_rbf_rangesame_test_set()
@@ -375,7 +379,7 @@ def run_eval():
         summary_block = "\n" + ("-" * 20) + "\n" + f"Model: {model_name}"
         for k, v in res.items():
             if k == "mean_lls":
-                file_out = f"{folder_name}data/{model_name.replace(' ', '_')}_mean_lls_{set_name}.txt"
+                file_out = f"{folder_name}datalls/{model_name.replace(' ', '_')}_mean_lls_{set_name}.txt"
                 np.savetxt(file_out, np.array(v, dtype=np.float32), fmt="%.12f")
                 summary_block += f"\n{ k:>15}: wrote {len(v)} values to {file_out}"
             else:
