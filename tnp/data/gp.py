@@ -194,6 +194,11 @@ class RandomScaleGPGenerator(GPGenerator, SyntheticGeneratorUniformInput):
     pass
 
 
+# Used for combined kernels where each batch randomly samples kernel per point (so a batch may have samples from multiple kernels)
+class MixedBatchKernelGPGenerator(GPGenerator, SyntheticGeneratorUniformInput):
+    
+
+
 class RandomScaleGPGeneratorSameInputs(RandomScaleGPGenerator):
 
     def sample_inputs(
