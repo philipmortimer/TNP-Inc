@@ -159,7 +159,7 @@ def get_model_list(N_PERMUTATIONS, ar_runs):
         greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
     models_ar = [tnp_ar_5, tnp_ar_50, tnp_ar_100]
     models_me = [tnp_causal, tnp_causal_batched, tnp_causal_batched_prior]
-    return models_me
+    return models_all
 
 
 def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
@@ -347,8 +347,8 @@ def fast_eval_model(
 
 def run_eval():
     MAX_SIZE_GPU = 4096  # Max size - tune with GPU used to maximisie throughput
-    N_PERMUTATIONS = 10_000 # How many permutations of dataset to test
-    ar_runs = 5 # How many TNP A runs per model to try - if TNPA is being included
+    N_PERMUTATIONS = 1_000 # How many permutations of dataset to test
+    ar_runs = 1 # How many TNP A runs per model to try - if TNPA is being included
     USE_HALF_PREC = True # Use float16?
     pl.seed_everything(1)
 
