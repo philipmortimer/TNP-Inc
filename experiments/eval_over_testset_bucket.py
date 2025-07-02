@@ -381,7 +381,7 @@ def run_eval():
         summary_block = "\n" + ("-" * 20) + "\n" + f"Model: {model_name}"
         for k, v in res.items():
             if k == "mean_lls":
-                file_out = f"{folder_name}datalls/{model_name.replace(' ', '_')}_mean_lls_{set_name}.txt"
+                file_out = f"{folder_name}datallsgpu5/{model_name.replace(' ', '_')}_mean_lls_{set_name}.txt"
                 np.savetxt(file_out, np.array(v, dtype=np.float32), fmt="%.12f")
                 summary_block += f"\n{ k:>15}: wrote {len(v)} values to {file_out}"
             else:
