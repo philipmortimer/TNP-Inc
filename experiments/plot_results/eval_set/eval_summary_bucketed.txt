@@ -1,40 +1,14 @@
 Summary over eval data set RBF
 --------------------
-Model: IncTNP
-        mean_ll: 0.374957091237884
-         std_ll: 0.5491232950384579
-      mean_rmse: 0.22365811578929423
-       std_rmse: 0.2097087069480062
+Model: TNP-D
+        mean_ll: 0.317758901626803
+         std_ll: 0.5276857406549798
+      mean_rmse: 0.23025578170199879
+       std_rmse: 0.20656370008694036
      mean_gt_ll: 0.4589964243941722
       std_gt_ll: 0.47341107595738485
-  total_samples: 409600
-   shuffle_time: 0.06817913055419922
- inference_time: 19.90037775039673
-      stat_time: 0.16334033012390137
-       mean_lls: wrote 100 values to experiments/plot_results/eval_set/datalls/IncTNP_mean_lls_RBF.txt
---------------------
-Model: IncTNP (Batched)
-        mean_ll: 0.39994093747634907
-         std_ll: 0.5353092782091806
-      mean_rmse: 0.22030442666262387
-       std_rmse: 0.20831972454353015
-     mean_gt_ll: 0.4589964243941722
-      std_gt_ll: 0.47341107595738485
-  total_samples: 409600
-   shuffle_time: 0.046801090240478516
- inference_time: 19.945608377456665
-      stat_time: 0.12585926055908203
-       mean_lls: wrote 100 values to experiments/plot_results/eval_set/datalls/IncTNP_(Batched)_mean_lls_RBF.txt
---------------------
-Model: IncTNP-Prior (Batched)
-        mean_ll: 0.389554548265296
-         std_ll: 0.5326428760874926
-      mean_rmse: 0.22183085657656193
-       std_rmse: 0.2078164449814819
-     mean_gt_ll: 0.4589964243941722
-      std_gt_ll: 0.47341107595738485
-  total_samples: 409600
-   shuffle_time: 0.04703044891357422
- inference_time: 20.45685625076294
-      stat_time: 0.12764334678649902
-       mean_lls: wrote 100 values to experiments/plot_results/eval_set/datalls/IncTNP-Prior_(Batched)_mean_lls_RBF.txt
+  total_samples: 4096
+   shuffle_time: 0.06806421279907227
+ inference_time: 2.1219003200531006
+      stat_time: 0.1218252182006836
+       mean_lls: wrote 1 values to experiments/plot_results/eval_set/datalls/TNP-D_mean_lls_RBF.txt

@@ -159,7 +159,9 @@ def get_model_list(N_PERMUTATIONS, ar_runs):
         greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
     models_ar = [tnp_ar_5, tnp_ar_50, tnp_ar_100]
     models_me = [tnp_causal, tnp_causal_batched, tnp_causal_batched_prior]
-    return models_all
+    models_greedy = [greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
+        greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
+    return models_ar
 
 
 def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
@@ -276,12 +278,12 @@ def fast_eval_model(
                     t0 = time.time()
                     if shuffle_strategy == "random": perms_slice = torch.rand(n_rep, nc, device=device).argsort(1)
                     else: perms_slice = None
+                    if USE_HALF_PREC and processed==0:
+                        base_batch.xc = base_batch.xc.half()
+                        base_batch.yc = base_batch.yc.half()
+                        base_batch.xt = base_batch.xt.half()
+                        base_batch.yt = base_batch.yt.half()
                     big_batch = _replicate_batch(model, base_batch, n_rep, shuffle_strategy, perms=perms_slice)
-                    if USE_HALF_PREC:
-                        big_batch.xc = big_batch.xc.half()
-                        big_batch.yc = big_batch.yc.half()
-                        big_batch.xt = big_batch.xt.half()
-                        big_batch.yt = big_batch.yt.half()
                     shuffle_time += time.time() - t0
 
                     # Prediction
