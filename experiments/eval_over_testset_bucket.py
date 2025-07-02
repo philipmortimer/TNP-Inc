@@ -161,7 +161,7 @@ def get_model_list(N_PERMUTATIONS, ar_runs):
     models_me = [tnp_causal, tnp_causal_batched, tnp_causal_batched_prior]
     models_greedy = [greedy_best_tnp_causal_batched_prior_logp, greedy_worst_tnp_causal_batched_prior_logp, greedy_median_tnp_causal_batched_prior_logp,
         greedy_best_tnp_causal_batched_prior_var, greedy_worst_tnp_causal_batched_prior_var, greedy_median_tnp_causal_batched_prior_var]
-    return models_ar
+    return models_me
 
 
 def shuffle_batch(model, batch, shuffle_strategy: str, device: str="cuda"):
