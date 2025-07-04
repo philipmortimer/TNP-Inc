@@ -10,6 +10,7 @@ from torch import nn
 import wandb
 from tnp.data.base import Batch
 from tnp.data.synthetic import SyntheticBatch
+from tnp.data.intrasynthetic import SyntheticBatchIntra
 from tnp.utils.np_functions import np_pred_fn
 
 matplotlib.rcParams["mathtext.fontset"] = "stix"
@@ -39,10 +40,11 @@ def plot(
     ]
     for i in range(num_fig):
         batch = batches[i]
-        xc = batch.xc[:1]
-        yc = batch.yc[:1]
-        xt = batch.xt[:1]
-        yt = batch.yt[:1]
+        BATCH_IDX = 0 # This is implicit from the original code - we only take the first item per batch to plot
+        xc = batch.xc[:BATCH_IDX+1] # same as batch.xc[:1] (i.e. first batch item)
+        yc = batch.yc[:BATCH_IDX+1]
+        xt = batch.xt[:BATCH_IDX+1]
+        yt = batch.yt[:BATCH_IDX+1]
 
         batch.xc = xc
         batch.yc = yc
@@ -98,6 +100,7 @@ def plot(
 
         title_str = f"$N = {xc.shape[1]}$ NLL = {model_nll:.3f}"
 
+        gt_mean, gt_std, gt_loglik = None, None, None
         if isinstance(batch, SyntheticBatch) and batch.gt_pred is not None:
             with torch.no_grad():
                 gt_mean, gt_std, _ = batch.gt_pred(
@@ -111,6 +114,22 @@ def plot(
                     xt=xt,
                     yt=yt,
                 )
+        elif isinstance(batch, SyntheticBatchIntra) and batch.gt_preds_batch is not None:
+            with torch.no_grad():
+                gt_mean, gt_std, _ = batch.gt_preds_batch[BATCH_IDX](
+                    xc=xc,
+                    yc=yc,
+                    xt=x_plot,
+                )
+                _, _, gt_loglik = batch.gt_preds_batch[BATCH_IDX](
+                    xc=xc,
+                    yc=yc,
+                    xt=xt,
+                    yt=yt,
+                )
+
+        if gt_mean is not None and gt_std is not None and gt_loglik is not None:
+            with torch.no_grad():    
                 gt_nll = -gt_loglik.sum() / batch.yt[..., 0].numel()
 
             # Plot ground truth

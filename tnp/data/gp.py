@@ -1,6 +1,6 @@
 import random
 from abc import ABC
-from typing import Dict, Iterable, Optional, Tuple, Union
+from typing import Dict, Iterable, Optional, Tuple, Union, List
 
 import einops
 import gpytorch
@@ -9,6 +9,7 @@ import torch
 from ..networks.gp import RandomHyperparameterKernel
 from .base import GroundTruthPredictor
 from .synthetic import SyntheticGeneratorUniformInput
+from .intrasynthetic import SyntheticGeneratorIntraUniformInput
 
 
 class GPRegressionModel(gpytorch.models.ExactGP):
@@ -195,8 +196,27 @@ class RandomScaleGPGenerator(GPGenerator, SyntheticGeneratorUniformInput):
 
 
 # Used for combined kernels where each batch randomly samples kernel per point (so a batch may have samples from multiple kernels)
-class MixedBatchKernelGPGenerator(GPGenerator, SyntheticGeneratorUniformInput):
-    
+class MixedBatchKernelGPGenerator(GPGenerator, SyntheticGeneratorIntraUniformInput):
+    def sample_outputs(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, List[GroundTruthPredictor]]:
+        # x shape is [m, n, dx]
+        m, n, _ = x.shape
+        y = None
+        gt_preds = [None] * m
+        for i in range(m):
+            gt_pred = self.set_up_gp() #  Sets up a new GP with a randomly chosen kernel of the available ones
+            x_i = x[i, :, :].unsqueeze(0) # Equivalent to an input of batchsize 1 [1, n, dx]
+            y_i = gt_pred.sample_outputs(x_i) # [1, n, dy]
+            gt_preds[i] = gt_pred
+            
+            # Allocates y
+            if y is None:
+                _, _, dy = y_i.shape
+                y = torch.empty((m, n, dy), device=y_i.device, dtype=y_i.dtype)
+            y[i, :, :] = y_i.squeeze(0)
+        
+        return y, gt_preds
 
 
 class RandomScaleGPGeneratorSameInputs(RandomScaleGPGenerator):
