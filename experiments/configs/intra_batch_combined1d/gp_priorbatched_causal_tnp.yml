@@ -56,6 +56,37 @@ generators:
     batch_size: 16
     deterministic: True
 
+rbf_kernel:
+  _target_: tnp.networks.gp.RBFKernel
+  _partial_: True
+  ard_num_dims: ${params.dim_x}
+  min_log10_lengthscale: ${params.min_log10_lengthscale}
+  max_log10_lengthscale: ${params.max_log10_lengthscale}
+
+matern12_kernel:
+  _target_: tnp.networks.gp.MaternKernel
+  _partial_: True
+  nu: 0.5
+  ard_num_dims: ${params.dim_x}
+  min_log10_lengthscale: ${params.min_log10_lengthscale}
+  max_log10_lengthscale: ${params.max_log10_lengthscale}
+
+matern32_kernel:
+  _target_: tnp.networks.gp.MaternKernel
+  _partial_: True
+  nu: 1.5
+  ard_num_dims: ${params.dim_x}
+  min_log10_lengthscale: ${params.min_log10_lengthscale}
+  max_log10_lengthscale: ${params.max_log10_lengthscale}
+
+matern52_kernel:
+  _target_: tnp.networks.gp.MaternKernel
+  _partial_: True
+  nu: 2.5
+  ard_num_dims: ${params.dim_x}
+  min_log10_lengthscale: ${params.min_log10_lengthscale}
+  max_log10_lengthscale: ${params.max_log10_lengthscale}
+
 periodic_kernel:
   _target_: tnp.networks.gp.PeriodicKernel
   _partial_: True
@@ -64,7 +95,6 @@ periodic_kernel:
   max_log10_lengthscale: ${params.max_log10_lengthscale}
   min_log10_period: ${params.min_log10_period}
   max_log10_period: ${params.max_log10_period}
-
 
 model:
   _target_: tnp.models.incTNPBatchedPrior.IncTNPBatchedPrior
