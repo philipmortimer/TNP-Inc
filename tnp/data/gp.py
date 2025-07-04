@@ -9,7 +9,6 @@ import torch
 from ..networks.gp import RandomHyperparameterKernel
 from .base import GroundTruthPredictor
 from .synthetic import SyntheticGeneratorUniformInput
-from .intrasynthetic import SyntheticGeneratorIntraUniformInput
 
 
 class GPRegressionModel(gpytorch.models.ExactGP):
@@ -195,11 +194,48 @@ class RandomScaleGPGenerator(GPGenerator, SyntheticGeneratorUniformInput):
     pass
 
 
+# Takes a list of GT preds for within a batch and combines them
+class MixedBatchGroundTruthPredictor(GroundTruthPredictor):
+    def __init__(
+        self,
+        gt_predictors: List[GroundTruthPredictor],
+    ):
+        self.gt_predictors = gt_predictors
+
+    def __call__(
+        self,
+        xc: torch.Tensor,
+        yc: torch.Tensor,
+        xt: torch.Tensor,
+        yt: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        m = xc.shape[0]
+        assert m <= len(self.gt_predictors), "Invalid predicted batch shape for number of predictors"
+        # Iterates over the first m tasks and assume that they are ordered to correspond to the correct GT predictor - plot code is a bit hacky so we are inheriting tech debt here a little bit. check_shapes cleaner here
+        mean_list = []
+        std_list = []
+        gt_loglik_list = []      
+        for i in range(m):
+            mean, std, ll = self.gt_predictors[i](
+                xc=xc[i : i + 1],
+                yc=yc[i : i + 1],
+                xt=xt[i : i + 1],
+                yt=None if yt is None else yt[i : i + 1],
+            )
+            mean_list.append(mean)
+            std_list.append(std)
+            if ll is not None: gt_loglik_list.append(ll)
+        mean = torch.cat(mean_list, 0)
+        std = torch.cat(std_list, 0)
+        ll = torch.cat(gt_loglik_list, 0) if gt_loglik_list != [] else None
+        return mean, std, ll
+
+
 # Used for combined kernels where each batch randomly samples kernel per point (so a batch may have samples from multiple kernels)
-class MixedBatchKernelGPGenerator(GPGenerator, SyntheticGeneratorIntraUniformInput):
+class MixedBatchKernelGPGenerator(GPGenerator, SyntheticGeneratorUniformInput):
     def sample_outputs(
         self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, List[GroundTruthPredictor]]:
+    ) -> Tuple[torch.Tensor, GroundTruthPredictor]:
         # x shape is [m, n, dx]
         m, n, _ = x.shape
         y = None
@@ -216,7 +252,7 @@ class MixedBatchKernelGPGenerator(GPGenerator, SyntheticGeneratorIntraUniformInp
                 y = torch.empty((m, n, dy), device=y_i.device, dtype=y_i.dtype)
             y[i, :, :] = y_i.squeeze(0)
         
-        return y, gt_preds
+        return y, MixedBatchGroundTruthPredictor(gt_preds)
 
 
 class RandomScaleGPGeneratorSameInputs(RandomScaleGPGenerator):
