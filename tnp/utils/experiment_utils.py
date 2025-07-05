@@ -128,7 +128,15 @@ def initialize_experiment() -> DictConfig:
     # Make argument parser with config argument.
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, nargs="+")
+    parser.add_argument("--learning_rate", type=float, default=None)
     args, config_changes = parser.parse_known_args()
+
+    # Adds learning rate if its a passed argument
+    if args.learning_rate is not None:
+        print(f"Set learning rate to {args.learning_rate}")
+        config_changes.append(f"optimiser.lr={args.learning_rate}")
+    else:
+        print("using template lr")
 
     raw_config = deep_convert_dict(
         hiyapyco.load(
