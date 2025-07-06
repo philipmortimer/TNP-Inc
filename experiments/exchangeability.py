@@ -26,6 +26,8 @@ from matplotlib.ticker import LogFormatterMathtext
 from tnp.models.tnpa import TNPA
 import gpytorch
 import torch.distributions as td
+from pathlib import Path
+import re
 
 
 # Good plt figures that take the font used in plot.py already
@@ -259,7 +261,7 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
         if max_samples is not None and  i >= max_samples: break
 
     assert i>=1, "No data batches were processed."
-    assert return_samples is None or len(m_var_nll_samples) == return_samples, "Not enough return samples due to too small data loader"
+    #assert return_samples is None or len(m_var_nll_samples) == return_samples, "Not enough return samples due to too small data loader"
 
     m_vars = np.array(m_vars)
     m_nlls = np.array(m_nlls)
@@ -312,7 +314,11 @@ def exchangeability_test(models, data, no_permutations=20, device='cuda', use_au
     print(f"NLL (eq 6) - mean: {mean_m_nlls} +/- {half_w_m_nll}")
     print("-----------")
 
-def get_plot_rbf(nc, nt, samples_per_epoch):
+# Converts string to file that can be written safely
+def _slug(s: str) -> str:
+    return re.sub(r"[^\w\-\.]", "_", s)
+
+def get_plot_rbf(nc, nt, samples_per_epoch, batch_size):
     # Data loader - RBF kernel in this case
     ard_num_dims = 1
     min_log10_lengthscale = -0.602
@@ -320,7 +326,6 @@ def get_plot_rbf(nc, nt, samples_per_epoch):
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     noise_std=0.1
-    batch_size = 128
     deterministic = True
 
     rbf_kernel_factory = partial(RBFKernel, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
@@ -333,8 +338,6 @@ def get_plot_rbf(nc, nt, samples_per_epoch):
 
 # Attempts to recreate something like figure 2
 def plot_models_setup_rbf_same():
-    nc, nt = 32, 128 
-    samples_per_epoch = 4096 # How many datapoints in datasets
     # Defines each model
     tnp_plain = ['experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', "TNP-D"]
     inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', "incTNP"]
@@ -360,59 +363,67 @@ def plot_models_setup_rbf_same():
     gp_streamed_sliding_32 = ["", "", gp_name, 32, "Sliding"]
     models_gp = [gp_streamed_expanding_1, gp_streamed_expanding_2, gp_streamed_expanding_4, gp_streamed_expanding_8, gp_streamed_expanding_16, gp_streamed_expanding_32,
         gp_streamed_sliding_1, gp_streamed_sliding_2, gp_streamed_sliding_4, gp_streamed_sliding_8, gp_streamed_sliding_16, gp_streamed_sliding_32]
-    models_gp = [gp_streamed_sliding_16]
+    models_gp = [gp_streamed_expanding_16]
 
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_ar + models_gp
-    return models_gp, nc, nt, samples_per_epoch
+    return models_tnp
 
-# Attempts to recreate something like figure 2. Use plot_models_setup as helper for this func.
-def plot_models(helper_tuple):
+def extract_vars_from_folder_name(folder_name):
+    patterns = {
+        'nc': r'nc_(\d+)',
+        'nt': r'nt_(\d+)',
+        'no_permutations': r'np_(\d+)',
+        'samples_per_epoch': r'spe_(\d+)',
+        'batch_size': r'bs_(\d+)',
+        'max_samples': r'ms_(\d+)',
+        'return_samples': r'rs_(\d+)',
+        'use_autoreg_eq': r'uae_(True|False)'
+    }
+    variables_found = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, folder_name)
+        assert match, "Invalid folder name no match found"
+        value_str_found = match.group(1)
+        # Sorts types
+        if key == 'use_autoreg_eq': variables_found[key] = (value_str_found == 'True')
+        else: variables_found[key] = int(value_str_found)
+    return variables_found
+
+def generate_folder_name(nc, nt, samples_per_epoch, no_permutations, batch_size, use_autoreg_eq, max_samples, return_samples):
+    file_str = f'nc_{nc}_nt_{nt}_np_{no_permutations}_spe_{samples_per_epoch}_bs_{batch_size}_ms_{max_samples}_rs_{return_samples}_uae_{use_autoreg_eq}'
+    return file_str
+
+# Takes a folder with data written and plots the fig
+def plot_from_folder(folder):
+    pars = extract_vars_from_folder_name(folder)
+    nc, nt = pars["nc"], pars["nt"]
+
+    data_directory = Path(folder)
+    model_folders = [p for p in data_directory.iterdir() if p.is_dir()]
+
     # Colour pallete to use
     tableau_colorblind_10 = ['#006BA4','#FF800E','#ABABAB','#595959','#5F9ED1','#C85200','#898989','#A2C8EC','#FFBC79','#CFCFCF']
     colours = cycle(tableau_colorblind_10)
     fig, ax = plt.subplots(figsize=(8.0, 6.0))
-    (models, nc, nt, samples_per_epoch) = helper_tuple
-    seq_len = nc + nt
     # Stores all plotted points to calculate graph limits
     all_xs = []
     all_ys = []
-    # Exchange hyperparams
-    no_permutations=64
-    use_autoreg_eq=False
-    max_samples=samples_per_epoch
-    #max_samples = 100
-    return_samples=10
+    # Loops through models and plots them
+    for (model_folder, colour) in zip(model_folders, colours):
+        with open(model_folder / 'summary.txt', 'r', encoding='utf-8') as f:
+            model_summary_txt = f.read()
+        # Extracts from the summary fixed format
+        lines = model_summary_txt.split("\n")
+        model_name = lines[1].split(" ")[1]
+        mean_m_var = float(lines[2].split(" ")[1])
+        mean_m_nlls = float(lines[3].split(" ")[1])
+        npz_file = lines[4].split(": ")[1]
+        data = np.load(model_folder / npz_file)
+        samples_m_var = data["samples_m_var"]
+        samples_m_nll = data["samples_m_nll"]
 
-    no_permutations=3 # DELETE
-    prev_model, prev_cptk, prev_yml = None, None, None
-    for mod_data, colour in zip(models, colours):
-        mod_cptk, mod_yml, model_name = mod_data[0], mod_data[1], mod_data[2]
-        print(model_name)
-        use_torch_grad = False
-        # Handles GP case seperately
-        if model_name == "Streamed GP":
-            _, _, name_base, chunk_size, strat = mod_data
-            model = GPStreamRBF(chunk_size=chunk_size, train_strat=strat)
-            model_name += f' (chnk={chunk_size} - {strat})'
-            use_torch_grad = True # Need gradient to train the GP model
-        else:
-            model = get_model(mod_cptk, mod_yml)
-            if len(mod_data) >= 4:
-                model_name = model_name + f' ({mod_data[3]} samples)'
-            if len(mod_data) >= 4 and isinstance(model, TNPA) and model_name == "TNP-A": # Sets num samples as appropriate
-                model.num_samples = mod_data[3]
-            model.eval()
-
-        (mean_m_var, _,), (mean_m_nlls, _), m_var_nll_samples = exchange([model], get_plot_rbf(nc, nt, samples_per_epoch), no_permutations=no_permutations, device='cuda', use_autoreg_eq=use_autoreg_eq, max_samples=max_samples, seq_len=seq_len, return_samples=return_samples, use_torch_grad=use_torch_grad)
-        samples_m_var = [x[0].item() for x in m_var_nll_samples]
-        samples_m_nll = [x[1].item() for x in m_var_nll_samples]
-        
-        print(mean_m_var)
-        print(mean_m_nlls)
-        print(m_var_nll_samples)
-        print(samples_m_nll)
-        # Hacky code - figure out why this is case. Filters out ugly / unexpected examples
+        # Hacky code - filters out ugly examples
         idx_to_rem = [i for i in range(len(samples_m_nll)) if samples_m_nll[i] <= 0.0]
         samples_m_nll = [samples_m_nll[i] for i in range(len(samples_m_nll)) if i not in idx_to_rem]
         samples_m_var = [samples_m_var[i] for i in range(len(samples_m_var)) if i not in idx_to_rem]
@@ -422,6 +433,7 @@ def plot_models(helper_tuple):
         all_xs.append(mean_m_var)
         all_ys.extend(samples_m_nll)
         all_ys.append(mean_m_nlls)
+
         # Plots small dots
         ax.scatter(
             samples_m_var,
@@ -451,8 +463,6 @@ def plot_models(helper_tuple):
             zorder=3,
         )
 
-        prev_model, prev_cptk, prev_yml = model, mod_cptk, mod_yml
-
     # Calculates log limits for graphs - will probably break in case of 0 / neg values (which can occurr but is prolly unlikely)
     min_x_log = np.floor(np.log10(min(all_xs)))
     max_x_log = np.ceil(np.log10(max(all_xs)))
@@ -480,12 +490,84 @@ def plot_models(helper_tuple):
 
     ax.set_title(f"Implicit Bayesianness vs Performance (NC={nc}, NT={nt})")
 
-    plt.savefig("experiments/plot_results/exchange/brunofig.png", bbox_inches="tight")
+    plt.savefig(folder + "/brunofig.png", bbox_inches="tight")
+
+# Attempts to recreate something like figure 2. Use plot_models_setup as helper for this func.
+def gather_stats_models(helper_tuple, base_folder_name):
+    # Exchange hyperparams
+    nc, nt = 32, 128 
+    samples_per_epoch = 4096 # How many datapoints in datasets
+    no_permutations=64
+    no_permutations=3 # DELETE - done to make quicker whilst testing
+    batch_size = 128
+    use_autoreg_eq=False
+    max_samples=samples_per_epoch
+    return_samples=max_samples # essentially return as many as possible (but one per batch)
+    skip_existing_folders = True # Skips existing file writes - no need to do work again
+    # End of hypers
+
+    (models) = helper_tuple
+    seq_len = nc + nt
+
+    # Ensures base and data folder already exists
+    base_path = Path(base_folder_name)
+    base_path.mkdir(exist_ok=True)
+    data_folder = base_folder_name + f"/{generate_folder_name(nc=nc, nt=nt, samples_per_epoch=samples_per_epoch, no_permutations=no_permutations, use_autoreg_eq=use_autoreg_eq, max_samples=max_samples, return_samples=return_samples,batch_size=batch_size)}"
+    data_path = Path(data_folder)
+    data_path.mkdir(exist_ok=True)
+
+    for mod_data in models:
+        mod_cptk, mod_yml, model_name = mod_data[0], mod_data[1], mod_data[2]
+        # Formats model names
+        if model_name == "Streamed GP":
+            _, _, name_base, chunk_size, strat = mod_data
+            model_name_fmt = model_name + f' ({strat} - chnk={chunk_size})'
+        elif model_name == "TNP-A":
+            model_name_fmt = model_name + f' ({mod_data[3]} samples)'
+        else: model_name_fmt = model_name
+        print(model_name_fmt)
+
+        # Checks to see if exact model run has already been written (no need to do again if it has)
+        model_folder = data_folder + "/" + _slug(model_name_fmt)
+        if skip_existing_folders and os.path.exists(model_folder): continue
+
+        use_torch_grad = False
+        # Handles GP case seperately
+        if model_name == "Streamed GP":
+            _, _, name_base, chunk_size, strat = mod_data
+            model = GPStreamRBF(chunk_size=chunk_size, train_strat=strat)
+            use_torch_grad = True # Need gradient to train the GP model
+        elif model_name == "TNP-A":
+            model = get_model(mod_cptk, mod_yml)
+            model.num_samples = mod_data[3]
+            model.eval()
+        else:
+            model = get_model(mod_cptk, mod_yml)
+            model.eval()
+
+        (mean_m_var, _,), (mean_m_nlls, _), m_var_nll_samples = exchange([model], get_plot_rbf(nc, nt, samples_per_epoch, batch_size=batch_size), no_permutations=no_permutations, device='cuda', use_autoreg_eq=use_autoreg_eq, max_samples=max_samples, seq_len=seq_len, return_samples=return_samples, use_torch_grad=use_torch_grad)
+        samples_m_var = [x[0].item() for x in m_var_nll_samples]
+        samples_m_nll = [x[1].item() for x in m_var_nll_samples]
+
+        # Writes recorded results to folder
+        model_folder_path = Path(model_folder)
+        model_folder_path.mkdir(exist_ok=True)
+        samples_m_var_np = np.array(samples_m_var)
+        samples_m_nll_np = np.array(samples_m_nll)
+        rel_sample_name = "samples.npz"
+        save_samples_path = model_folder + "/" + rel_sample_name
+        summary_block = ("-" * 20) + "\n" + f"Model_Name: {model_name_fmt}\nMean_M_Var: {mean_m_var}\nMean_M_NLL: {mean_m_nlls}\nSamples_File (samples_m_var and samples_m_nll): {rel_sample_name}"
+        print(summary_block)
+        np.savez_compressed(save_samples_path, samples_m_var=samples_m_var_np, samples_m_nll=samples_m_nll_np)
+        with open(model_folder + '/summary.txt', 'w') as file_object:
+            file_object.write(summary_block)
+
+    plot_from_folder(data_folder) # Plots generated data
 
 
 
 if __name__ == "__main__":
-    plot_models(plot_models_setup_rbf_same())
+    gather_stats_models(plot_models_setup_rbf_same(), base_folder_name="experiments/plot_results/exchange/resexc")
     exit(0)
     # E.g. run with: python experiments/exchangeability.py --config experiments/configs/synthetic1d/gp_plain_tnp.yml
     experiment = initialize_experiment() # Gets config file
