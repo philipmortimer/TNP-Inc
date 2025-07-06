@@ -366,7 +366,7 @@ def plot_models_setup_rbf_same():
     models_gp = [gp_streamed_expanding_16]
 
     models_all_no_ar = models_tnp + models_gp
-    models_all = models_tnp + models_ar + models_gp
+    models_all = models_tnp + models_gp + models_ar
     return models_all_no_ar
 
 def extract_vars_from_folder_name(folder_name):
@@ -505,12 +505,16 @@ def gather_stats_models(helper_tuple, base_folder_name):
     nc, nt = 32, 128 
     samples_per_epoch = 4096 # How many datapoints in datasets
     no_permutations=64
-    no_permutations=3
     batch_size = 128
     use_autoreg_eq=False
     max_samples=samples_per_epoch
     return_samples=max_samples # essentially return as many as possible (but one per batch)
     skip_existing_folders = True # Skips existing file writes - no need to do work again
+    # Silly test to be deleted hypers start here
+    nc, nt = 16, 32 
+    samples_per_epoch = 350
+    no_permutations=3
+    batch_size = 16
     # End of hypers
 
     (models) = helper_tuple
