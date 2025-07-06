@@ -1,0 +1,56 @@
+Model: TNP-D                                                                                                                                                  
+        mean_ll: 0.317758689627226                                                                                                                            
+         std_ll: 0.5276855094579623                                                                                                                           
+      mean_rmse: 0.23025584628339857                                                                                                                          
+       std_rmse: 0.20656363869183367                                                                                                                          
+     mean_gt_ll: 0.4589964243941722                                                                                                                           
+      std_gt_ll: 0.47341107595738485                                                                                                                          
+  total_samples: 4096                                                                                                                                         
+   shuffle_time: 0.06614351272583008                                                                                                                          
+ inference_time: 2.1933836936950684                                                                                                                           
+      stat_time: 0.11996865272521973                                                                                                                          
+       mean_lls: wrote 1 values to experiments/plot_results/eval_set/data/TNP-D_mean_lls_RBF.txt   
+
+
+Model: IncTNP                          
+        mean_ll: 0.3749787917795202                                            
+         std_ll: 0.5492422360554643                                            
+      mean_rmse: 0.22364596142229812                                           
+       std_rmse: 0.2096934327763927                                            
+     mean_gt_ll: 0.4589964243941722                                            
+      std_gt_ll: 0.47341107595738485                                           
+  total_samples: 4096000000            
+   shuffle_time: 208.90648651123047                                            
+ inference_time: 121108.42177343369                                            
+      stat_time: 919.2605831623077     
+       mean_lls: wrote 1000000 values to experiments/plot_results/eval_set/data/IncTNP_mean_lls_RBF.txt                                                       
+wandb:   1 of 1 files downloaded.     
+
+--------------------                   
+Model: IncTNP (Batched)                
+        mean_ll: 0.39994740396145523                                           
+         std_ll: 0.5354877042241606                                            
+      mean_rmse: 0.22030646540097892                                           
+       std_rmse: 0.20831426536283987                                           
+     mean_gt_ll: 0.4589964243941722                                            
+      std_gt_ll: 0.47341107595738485                                           
+  total_samples: 4096000000            
+   shuffle_time: 189.5493335723877     
+ inference_time: 112519.23229694366                                            
+      stat_time: 770.8691067695618     
+       mean_lls: wrote 1000000 values to experiments/plot_results/eval_set/data/IncTNP_(Batched)_mean_lls_RBF.txt      
+
+--------------------                   
+Model: IncTNP-Prior (Batched)          
+        mean_ll: 0.389715293232002     
+         std_ll: 0.5325162447741292                                            
+      mean_rmse: 0.22180228958039358                                           
+       std_rmse: 0.20780813994264213                                           
+     mean_gt_ll: 0.4589964243941722                                            
+      std_gt_ll: 0.47341107595738485                                           
+  total_samples: 4096000000            
+   shuffle_time: 265.4507713317871     
+ inference_time: 115786.50742435455                                            
+      stat_time: 1017.5160880088806                                            
+       mean_lls: wrote 1000000 values to experiments/plot_results/eval_set/data/IncTNP-Prior_(Batched)_mean_lls_RBF.txt    
+ 
