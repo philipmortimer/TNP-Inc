@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 from itertools import cycle
 import random
 from tnp.utils.np_functions import np_pred_fn
+from tnp.models.gp_online import GPStreamRBF
 from tnp.data.base import Batch
 from matplotlib.ticker import LogFormatterMathtext
 from tnp.models.tnpa import TNPA
@@ -321,17 +322,34 @@ def plot_models_setup_rbf_same():
     nc, nt = 32, 128 
     samples_per_epoch = 4096 # How many datapoints in datasets
     # Defines each model
-    models = []
-    tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
-    tnp_ar_samples = [100]
     tnp_plain = ['experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', "TNP-D"]
     inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', "incTNP"]
     inc_tnp_batched=['experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', "incTNP-Batched"]
-    models.extend([tnp_plain, inc_tnp, inc_tnp_batched])
-    #for i in tnp_ar_samples: models.append([tnp_ar_cptk, tnp_ar_yml, tnp_name, i])
+    models_tnp = [tnp_plain, inc_tnp, inc_tnp_batched]
 
-    
-    return models, nc, nt, samples_per_epoch
+    tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
+    tnp_ar_50 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 50]
+    models_ar = [tnp_ar_50]
+
+    gp_name = "Streamed GP"
+    gp_streamed_expanding_1 = ["", "", gp_name, 1, "Expanding"]
+    gp_streamed_expanding_2 = ["", "", gp_name, 2, "Expanding"]
+    gp_streamed_expanding_4 = ["", "", gp_name, 4, "Expanding"]
+    gp_streamed_expanding_8 = ["", "", gp_name, 8, "Expanding"]
+    gp_streamed_expanding_16 = ["", "", gp_name, 16, "Expanding"]
+    gp_streamed_expanding_32 = ["", "", gp_name, 32, "Expanding"]
+    gp_window_expanding_1 = ["", "", gp_name, 1, "Sliding"] # Sliding window now
+    gp_window_expanding_2 = ["", "", gp_name, 2, "Sliding"]
+    gp_window_expanding_4 = ["", "", gp_name, 4, "Sliding"]
+    gp_window_expanding_8 = ["", "", gp_name, 8, "Sliding"]
+    gp_window_expanding_16 = ["", "", gp_name, 16, "Sliding"]
+    gp_window_expanding_32 = ["", "", gp_name, 32, "Sliding"]
+    models_gp = [gp_streamed_expanding_1, gp_streamed_expanding_2, gp_streamed_expanding_4, gp_streamed_expanding_8, gp_streamed_expanding_16, gp_streamed_expanding_32,
+        gp_window_expanding_1, gp_window_expanding_2, gp_window_expanding_4, gp_window_expanding_8, gp_window_expanding_16, gp_window_expanding_32]
+
+    models_all_no_ar = models_tnp + models_gp
+    models_all = models_tnp + models_ar + models_gp
+    return models_all_no_ar, nc, nt, samples_per_epoch
 
 # Attempts to recreate something like figure 2. Use plot_models_setup as helper for this func.
 def plot_models(helper_tuple):
@@ -354,14 +372,18 @@ def plot_models(helper_tuple):
     for mod_data, colour in zip(models, colours):
         mod_cptk, mod_yml, model_name = mod_data[0], mod_data[1], mod_data[2]
         print(model_name)
-        # Loads model (reusing existing load if it only differs by samples)
-        if len(mod_data) >= 4:
-            model_name = model_name = model_name + f' ({mod_data[3]} samples)'
-        if len(mod_data) >= 4 and prev_cptk is not None and prev_yml is not None and prev_model is not None and isinstance(prev_model, TNPA) and model_name == "TNP-A":
-            model = prev_model
-            model.num_samples = mod_data[3]
-        else: model = get_model(mod_cptk, mod_yml)
-        model.eval()
+        # Handles GP case seperately
+        if model_name == "Streamed GP":
+            _, _, name_base, chunk_size, strat = mod_data
+            model = GPStreamRBF(chunk_size=chunk_size, train_strat=strat)
+            model_name += f' (chnk={chunk_size} - {strat})'
+        else:
+            model = get_model(mod_cptk, mod_yml)
+            if len(mod_data) >= 4:
+                model_name = model_name + f' ({mod_data[3]} samples)'
+            if len(mod_data) >= 4 and isinstance(model, TNPA) and model_name == "TNP-A": # Sets num samples as appropriate
+                model.num_samples = mod_data[3]
+            model.eval()
 
         (mean_m_var, _,), (mean_m_nlls, _), m_var_nll_samples = exchange([model], get_plot_rbf(nc, nt, samples_per_epoch), no_permutations=no_permutations, device='cuda', use_autoreg_eq=use_autoreg_eq, max_samples=max_samples, seq_len=seq_len, return_samples=return_samples)
         samples_m_var = [x[0].item() for x in m_var_nll_samples]

@@ -11,6 +11,7 @@ from ..models.base import (
     BatchedCausalTNPPrior,
 )
 from ..models.convcnp import GriddedConvCNP
+from ..models.gp_online import GPStream
 
 
 def np_pred_fn(
@@ -36,6 +37,8 @@ def np_pred_fn(
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
     elif isinstance(model, BatchedCausalTNPPrior):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
+    elif isinstance(model, GPStream):
+        pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt)
     else:
         raise ValueError
 

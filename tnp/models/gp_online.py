@@ -4,6 +4,7 @@ import torch
 from torch import nn
 import gpytorch
 from check_shapes import check_shapes
+from typing import Callable, Optional, Literal
 
 
 class ExactGP(gpytorch.models.ExactGP):
@@ -36,6 +37,7 @@ class GPStream(nn.Module):
         lr: float = 0.05, # LR for grad updates
         n_steps: int = 10, # Number of grad steps per update
         chunk_size: int = 1, # Size of chunks to be streamed in to model
+        train_strat: Literal["Expanding", "Sliding"] = "Expanding", # Whether to use an ever expanding window or a sliding one
         device: str = "cuda",
     ):
         super().__init__()
@@ -44,43 +46,48 @@ class GPStream(nn.Module):
         self.chunk_size = chunk_size
         self.device = device
         self.kernel_factory = kernel_factory
-
-        self.gp = None
-        self.likelihood = None
-        self.kernel = None
+        self.strategy = train_strat
 
     # Streams data in chunks and updates the hypers of the gp for the given example. May want to alter this
     # eg do we want to see data update then continue or do we want to keep expanding the window (alleviates catastrophic forgetting but may fit too well)
     @check_shapes(
         "xc: [1, nc, dx]", "yc: [1, nc, 1]"
     )
-    def _stream_through_gp(self, xc, yc):
+    def _stream_through_gp(self, gp, likelihood, xc, yc):
         _, nc, dx = xc.shape
         assert nc >= self.chunk_size and nc % self.chunk_size == 0, f"Chunk size {self.chunk_size} should be smaller or equal to nc {nc} and divide perfectly"
-        self.likelihood.train()
-        self.gp.train()
-        optimiser = torch.optim.Adam(self.gp.parameters(), lr=self.lr) # Adam optimiser chosen
-        mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.gp)
+        likelihood.train()
+        gp.train()
+        optimiser = torch.optim.Adam(gp.parameters(), lr=self.lr) # Adam optimiser chosen
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, gp)
         for i in range(0, nc, self.chunk_size):
             end = min(i + self.chunk_size, nc)
             cur_chunk_size = end - i
-            xc_sub = xc[:,i:end,:].reshape(-1, dx) # [cur_chunk_size, dx]
-            yc_sub = yc[:,i:end,:].reshape(-1) # [cur_chunk_size]
-            self.gp.set_train_data(inputs=xc_sub, targets=yc_sub, strict=False)
+
+            if self.strategy == "Expanding":
+                xc_sub = xc[:,:end,:].reshape(-1, dx) # [end, dx]
+                yc_sub = yc[:,:end,:].reshape(-1) # [end]
+            elif self.strategy == "Sliding":
+                xc_sub = xc[:,i:end,:].reshape(-1, dx) # [cur_chunk_size, dx]
+                yc_sub = yc[:,i:end,:].reshape(-1) # [cur_chunk_size]
+            else: raise ValueError(f"Incorrect strategy: {self.strategy}")
+
+
+            gp.set_train_data(inputs=xc_sub, targets=yc_sub, strict=False)
             # Performs update steps for hyper
             for _ in range(self.n_steps):
                 optimiser.zero_grad()
-                loss = -mll(self.gp(xc_sub), yc_sub)
+                loss = -mll(gp(xc_sub), yc_sub)
                 loss.backward()
                 optimiser.step()
-        self.likelihood.eval()
-        self.gp.eval()
+        likelihood.eval()
+        gp.eval()
 
     
     @check_shapes(
         "xc: [m, nc, dx]", "yc: [m, nc, 1]", "xt: [m, nt, dx]"
     )
-    def forward(self, xc, yc, xt):
+    def forward(self, xc, yc, xt) -> gpytorch.distributions.MultitaskMultivariateNormal:
         xc, yc, xt = xc.to(self.device), yc.to(self.device), xt.to(self.device)
         m, nc, dx = xc.shape
         _, nt, _ = xt.shape
@@ -88,16 +95,16 @@ class GPStream(nn.Module):
         preds = []
         for i in range(m):
             # Creates new gp
-            self.kernel = self.kernel_factory().to(self.device)
-            self.likelihood = gpytorch.likelihoods.GaussianLikelihood().to(self.device)
-            self.gp = ExactGP(likelihood=self.likelihood, kernel=self.kernel)
+            kernel = self.kernel_factory().to(self.device)
+            likelihood = gpytorch.likelihoods.GaussianLikelihood().to(self.device)
+            gp = ExactGP(likelihood=likelihood, kernel=kernel).to(self.device)
 
-            self._stream_through_gp(xc[i:i+1,:,:], yc[i:i+1,:,:]) # Trains GP hypers
+            self._stream_through_gp(gp, likelihood, xc[i:i+1,:,:], yc[i:i+1,:,:]) # Trains GP hypers
             xt_in = xt[i:i+1,:,:].reshape(nt,-1) # [nt, dx]
             with torch.no_grad():
-                function_dist = self.gp(xt_in)
-                pred_dist = self.likelihood(function_dist)
-            mean = pred_dist.mean.view(nt, 1) # [nt, 1]
+                function_dist = gp(xt_in)
+                pred_dist = likelihood(function_dist)
+            mean = pred_dist.mean
             cov_mat = pred_dist.covariance_matrix
             preds.append(gpytorch.distributions.MultivariateNormal(mean, cov_mat))
         pred_dist = gpytorch.distributions.MultitaskMultivariateNormal.from_batch(preds) # Combines dist from different batches
@@ -111,7 +118,8 @@ class GPStreamRBF(GPStream):
         chunk_size: int = 1,
         lr: float = 0.05, # LR for grad updates
         n_steps: int = 10, # Number of grad steps per update
+        train_strat: Literal["Expanding", "Sliding"] = "Expanding"
         device: str = "cuda",
     ):
         super().__init__(kernel_factory=(lambda: gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())),
-            chunk_size=chunk_size, lr=lr, n_steps=n_steps, device=device)
+            chunk_size=chunk_size, lr=lr, n_steps=n_steps, device=device, train_strat=train_strat)
