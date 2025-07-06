@@ -505,6 +505,7 @@ def gather_stats_models(helper_tuple, base_folder_name):
     nc, nt = 32, 128 
     samples_per_epoch = 4096 # How many datapoints in datasets
     no_permutations=64
+    no_permutations=3
     batch_size = 128
     use_autoreg_eq=False
     max_samples=samples_per_epoch

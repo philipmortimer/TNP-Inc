@@ -1,0 +1,5 @@
+--------------------
+Model_Name: incTNP
+Mean_M_Var: 9.109569571912289
+Mean_M_NLL: 8.457617104053497
+Samples_File (samples_m_var and samples_m_nll): samples.npz
