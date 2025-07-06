@@ -92,6 +92,8 @@ class GPStream(nn.Module):
         m, nc, dx = xc.shape
         _, nt, _ = xt.shape
         # Each batch is given an independent GP
+        means_list = []
+        covars_list = []
         preds = []
         for i in range(m):
             # Creates new gp
@@ -104,10 +106,11 @@ class GPStream(nn.Module):
             with torch.no_grad():
                 function_dist = gp(xt_in)
                 pred_dist = likelihood(function_dist)
-            mean = pred_dist.mean
-            cov_mat = pred_dist.covariance_matrix
-            preds.append(gpytorch.distributions.MultivariateNormal(mean, cov_mat))
-        pred_dist = gpytorch.distributions.MultitaskMultivariateNormal.from_batch(preds) # Combines dist from different batches
+            means_list.append(pred_dist.mean)
+            covars_list.append(pred_dist.covariance_matrix)
+        batched_mean = torch.stack(means_list, dim=0)
+        batched_covars = torch.stack(covars_list, dim=0)
+        pred_dist = gpytorch.distributions.MultivariateNormal(batched_mean, batched_covars)
         return pred_dist
 
 
@@ -118,7 +121,7 @@ class GPStreamRBF(GPStream):
         chunk_size: int = 1,
         lr: float = 0.05, # LR for grad updates
         n_steps: int = 10, # Number of grad steps per update
-        train_strat: Literal["Expanding", "Sliding"] = "Expanding"
+        train_strat: Literal["Expanding", "Sliding"] = "Expanding",
         device: str = "cuda",
     ):
         super().__init__(kernel_factory=(lambda: gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())),

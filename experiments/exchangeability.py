@@ -24,6 +24,8 @@ from tnp.models.gp_online import GPStreamRBF
 from tnp.data.base import Batch
 from matplotlib.ticker import LogFormatterMathtext
 from tnp.models.tnpa import TNPA
+import gpytorch
+import torch.distributions as td
 
 
 # Good plt figures that take the font used in plot.py already
@@ -46,98 +48,110 @@ matplotlib.rcParams.update({
 @check_shapes(
     "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]" , "perms_ctx: [K, nc]"
 )
-@torch.no_grad()
 def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, perms_ctx: torch.Tensor, 
     gt_pred, return_sample_index: Optional[int] = None,
-    sub_batch_size=1024):
-    # Computes ground truth nll measure (as mentioned in caption of figure 2)
-    _, _, gt_loglik = gt_pred(
-        xc=xc,
-        yc=yc,
-        xt=xt,
-        yt=yt,
-    ) # [m, nt]
-    gt_nll = -gt_loglik.sum(dim=1).to(xc.device) # sums over nt to get shape of [m]
-    gt_nll = gt_nll.unsqueeze(0) # [1, m] - allows for broacasting when we subtract later on
+    sub_batch_size=1024,
+    use_torch_grad: bool = False):
+    with torch.set_grad_enabled(use_torch_grad):
+        is_gp_model = isinstance(tnp_model, GPStreamRBF)
+        # Computes ground truth nll measure (as mentioned in caption of figure 2)
+        _, _, gt_loglik = gt_pred(
+            xc=xc,
+            yc=yc,
+            xt=xt,
+            yt=yt,
+        ) # [m, nt]
+        gt_nll = -gt_loglik.sum(dim=1).to(xc.device) # sums over nt to get shape of [m]
+        gt_nll = gt_nll.unsqueeze(0) # [1, m] - allows for broacasting when we subtract later on
 
-    # perms_ctx = [K, nc] - K permutations for nc context points with their indices in the tensor
-    K, nc = perms_ctx.shape
-    _, _, dy = yc.shape
-    m, _, dx = xc.shape
-    nt = yt.shape[1]
-    k_m = K * m
+        # perms_ctx = [K, nc] - K permutations for nc context points with their indices in the tensor
+        K, nc = perms_ctx.shape
+        _, _, dy = yc.shape
+        m, _, dx = xc.shape
+        nt = yt.shape[1]
+        k_m = K * m
 
-    assert return_sample_index == None or (return_sample_index >= 0 and return_sample_index < m), "Invalid return index"
+        assert return_sample_index == None or (return_sample_index >= 0 and return_sample_index < m), "Invalid return index"
 
-    # Broadcasts context
-    xc_broad = xc.unsqueeze(0).expand(K, -1, -1, -1) # [K, m, nc, dx]
-    yc_broad = yc.unsqueeze(0).expand(K, -1, -1, -1) # [K, m, nc, dy]
+        # Broadcasts context
+        xc_broad = xc.unsqueeze(0).expand(K, -1, -1, -1) # [K, m, nc, dx]
+        yc_broad = yc.unsqueeze(0).expand(K, -1, -1, -1) # [K, m, nc, dy]
 
-    # Generates perm gather indices
-    gather_x_idx = perms_ctx.view(K, 1, nc, 1).expand(-1, m, -1, dx)
-    gather_y_idx = perms_ctx.view(K, 1, nc, 1).expand(-1, m, -1, dy)
+        # Generates perm gather indices
+        gather_x_idx = perms_ctx.view(K, 1, nc, 1).expand(-1, m, -1, dx)
+        gather_y_idx = perms_ctx.view(K, 1, nc, 1).expand(-1, m, -1, dy)
 
-    # Permutations
-    xc_perm = torch.gather(xc_broad, 2, gather_x_idx)
-    yc_perm = torch.gather(yc_broad, 2, gather_y_idx)
+        # Permutations
+        xc_perm = torch.gather(xc_broad, 2, gather_x_idx)
+        yc_perm = torch.gather(yc_broad, 2, gather_y_idx)
 
-    # Broadcast target points to match shape
-    xt_rep = xt.unsqueeze(0).expand(K, -1, -1, -1) # [K, m, nc, dx]
-    yt_rep = yt.unsqueeze(0).expand(K, -1, -1, -1)  # [K, m, nc, dy]
+        # Broadcast target points to match shape
+        xt_rep = xt.unsqueeze(0).expand(K, -1, -1, -1) # [K, m, nc, dx]
+        yt_rep = yt.unsqueeze(0).expand(K, -1, -1, -1)  # [K, m, nc, dy]
 
-    # Flattens data into a single batch
-    xc_perm = xc_perm.reshape(k_m, nc, dx)
-    yc_perm = yc_perm.reshape(k_m, nc, dy)
-    xt_rep  = xt_rep.reshape(k_m, nt, dx)
-    yt_rep  = yt_rep.reshape(k_m, nt, dy)
+        # Flattens data into a single batch
+        xc_perm = xc_perm.reshape(k_m, nc, dx)
+        yc_perm = yc_perm.reshape(k_m, nc, dy)
+        xt_rep  = xt_rep.reshape(k_m, nt, dx)
+        yt_rep  = yt_rep.reshape(k_m, nt, dy)
 
-    # Creates a batch
-    x = torch.cat((xc_perm, xt_rep), dim=1)
-    y = torch.cat((yc_perm, yt_rep), dim=1)
+        # Creates a batch
+        x = torch.cat((xc_perm, xt_rep), dim=1)
+        y = torch.cat((yc_perm, yt_rep), dim=1)
 
-    # Chunked forward pass to prevent out of memory errors
-    all_log_probs = []
-    for i in range(0, k_m, sub_batch_size):
-        chunk_end = min(i + sub_batch_size, k_m)
-        chunk_xc = xc_perm[i:chunk_end]
-        chunk_yc = yc_perm[i:chunk_end]
-        chunk_xt = xt_rep[i:chunk_end]
-        chunk_yt = yt_rep[i:chunk_end]
-        chunk_x = torch.cat((chunk_xc, chunk_xt), dim=1)
-        chunk_y = torch.cat((chunk_yc, chunk_yt), dim=1)
-        chunk_batch = Batch(xc=chunk_xc, yc=chunk_yc, xt=chunk_xt, yt=chunk_yt, y=chunk_y, x=chunk_x)
-        
-        # Model inference. Note we choose not to use teacher forcing here currently
-        log_p_chunk = np_pred_fn(tnp_model, chunk_batch, predict_without_yt_tnpa=True).log_prob(chunk_yt)
-        all_log_probs.append(log_p_chunk)
+        # Chunked forward pass to prevent out of memory errors
+        all_log_probs = []
+        for i in range(0, k_m, sub_batch_size):
+            chunk_end = min(i + sub_batch_size, k_m)
+            chunk_xc = xc_perm[i:chunk_end]
+            chunk_yc = yc_perm[i:chunk_end]
+            chunk_xt = xt_rep[i:chunk_end]
+            chunk_yt = yt_rep[i:chunk_end]
+            chunk_x = torch.cat((chunk_xc, chunk_xt), dim=1)
+            chunk_y = torch.cat((chunk_yc, chunk_yt), dim=1)
+            chunk_batch = Batch(xc=chunk_xc, yc=chunk_yc, xt=chunk_xt, yt=chunk_yt, y=chunk_y, x=chunk_x)
+            
+            # Model inference.
+            pred_dist = np_pred_fn(tnp_model, chunk_batch, predict_without_yt_tnpa=True)
 
-        # Delete unused datastraight away - probably excessive but just to be sure
-        #del chunk_batch, chunk_xc, chunk_yc, chunk_xt, chunk_yt, log_p_chunk
+            # Computes log likelihood
+            if is_gp_model:
+                log_p_chunk = pred_dist.log_prob(chunk_yt.squeeze(-1)) # Dy must be = 1 for GP so squeeze to get log_p
+            else:
+                log_p_chunk = pred_dist.log_prob(chunk_yt)
+            all_log_probs.append(log_p_chunk)
 
-    # More deletions
-    #del xc_perm, yc_perm, xt_rep
-    #torch.cuda.empty_cache()
+            # Delete unused datastraight away - probably excessive but just to be sure
+            #del chunk_batch, chunk_xc, chunk_yc, chunk_xt, chunk_yt, log_p_chunk
 
-    # Converts list to tensor required
-    log_probs = torch.cat(all_log_probs, dim=0) # [K * m, nt, dy] 
-    log_probs = log_probs.sum(dim=(-1, -2)).view(K, m) # sums over nt and dy [K, m]
+        # More deletions
+        #del xc_perm, yc_perm, xt_rep
+        #torch.cuda.empty_cache()
 
-    variance = log_probs.var(dim=0, unbiased=True) # Variance over K - this is Var_PI from eq 5 in paper (this gives [m])
-    m_var_val = variance.mean().item() # Mean over m batches sampled from D^(n) - ie the monte-carlo approximation of the expectation
-    # Also computes simplified version of eq 6 - the average NLL (a measure of model performance)
-    neg_lp = - log_probs # [K, m]
-    excess_nll = neg_lp - gt_nll # This done to be in line with caption from figure 4 where mean is subtracted by gt_mean
-    mean = excess_nll.mean(dim=0) # expectation over K - i.e. E_PI (shape is [m])
-    m_mean_val = mean.mean().item() # Avergaes over the m batches sampled from D^(n)
+        # Converts list to tensor required
+        log_probs = torch.cat(all_log_probs, dim=0) # [K * m, nt, dy] 
+        # Handles GP vs TNP cases seperately
+        if is_gp_model:
+            log_probs = log_probs.view(K, m) # [K, m]
+        else:
+            log_probs = log_probs.sum(dim=(-1, -2)).view(K, m)  # sums over nt and dy [K, m]
 
-    # Can also randomly return a sample
-    rand_m_var = variance[return_sample_index] if return_sample_index is not None else None
-    rand_m_mean = mean[return_sample_index] if return_sample_index is not None else None
-    # Note - in this current implementation we only permutes the final full context. We don't account for incremental context points.
-    # This may need reconsidering when we consider the masked variant with incremental learning. 
-    # This func computes E_{(C, T) ~ D^(n)}[Var_{PI}[sigma_{j=1}^{nt} log p_{\theta}(y_{t, j} | C_{PI}, x_{t, j})]]
-    # when using a non-diagonal TNP. The inner expression changes when using different NPs (e.g. autoreg) and this needs to be considered also.
-    return m_var_val, m_mean_val, rand_m_var, rand_m_mean
+        variance = log_probs.var(dim=0, unbiased=True) # Variance over K - this is Var_PI from eq 5 in paper (this gives [m])
+        m_var_val = variance.mean().item() # Mean over m batches sampled from D^(n) - ie the monte-carlo approximation of the expectation
+        # Also computes simplified version of eq 6 - the average NLL (a measure of model performance)
+        neg_lp = - log_probs # [K, m]
+        excess_nll = neg_lp - gt_nll # This done to be in line with caption from figure 4 where mean is subtracted by gt_mean
+        mean = excess_nll.mean(dim=0) # expectation over K - i.e. E_PI (shape is [m])
+        m_mean_val = mean.mean().item() # Avergaes over the m batches sampled from D^(n)
+
+        # Can also randomly return a sample
+        rand_m_var = variance[return_sample_index] if return_sample_index is not None else None
+        rand_m_mean = mean[return_sample_index] if return_sample_index is not None else None
+        # Note - in this current implementation we only permutes the final full context. We don't account for incremental context points.
+        # This may need reconsidering when we consider the masked variant with incremental learning. 
+        # This func computes E_{(C, T) ~ D^(n)}[Var_{PI}[sigma_{j=1}^{nt} log p_{\theta}(y_{t, j} | C_{PI}, x_{t, j})]]
+        # when using a non-diagonal TNP. The inner expression changes when using different NPs (e.g. autoreg) and this needs to be considered also.
+        return m_var_val, m_mean_val, rand_m_var, rand_m_mean
 
 # Computes log joint variance of model. This is the full equation 5 from the paper - but more expensive
 @check_shapes(
@@ -187,7 +201,7 @@ def m_var_autoreg(tnp_model, x: torch.Tensor, y: torch.Tensor, perms: torch.Tens
 
 
 # Samples variance over trained models with different seeds
-def exchange(models_with_different_seeds, data_loader, no_permutations, device, use_autoreg_eq, max_samples, seq_len, return_samples=None):
+def exchange(models_with_different_seeds, data_loader, no_permutations, device, use_autoreg_eq, max_samples, seq_len, use_torch_grad, return_samples=None):
     assert return_samples == None or return_samples <= max_samples, "Cant return more samples than are computed"
     no_models = len(models_with_different_seeds)
     # Note - may want to consider diving by nt in future? (or even nt * dy)
@@ -233,7 +247,7 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
             
         # Computes m_var for each model
         for model  in models_with_different_seeds:
-            val = m_var_autoreg(model, x, y, perms, return_sample_index=return_sample_index) if use_autoreg_eq else m_var_fixed(model, xc, yc, xt, yt, perms, gt_pred=data.gt_pred, return_sample_index=return_sample_index)
+            val = m_var_autoreg(model, x, y, perms, return_sample_index=return_sample_index) if use_autoreg_eq else m_var_fixed(model, xc, yc, xt, yt, perms, gt_pred=data.gt_pred, return_sample_index=return_sample_index, use_torch_grad=use_torch_grad)
 
             mods_out_mvar.append(val[0])
             mods_out_mnll.append(val[1])
@@ -338,18 +352,19 @@ def plot_models_setup_rbf_same():
     gp_streamed_expanding_8 = ["", "", gp_name, 8, "Expanding"]
     gp_streamed_expanding_16 = ["", "", gp_name, 16, "Expanding"]
     gp_streamed_expanding_32 = ["", "", gp_name, 32, "Expanding"]
-    gp_window_expanding_1 = ["", "", gp_name, 1, "Sliding"] # Sliding window now
-    gp_window_expanding_2 = ["", "", gp_name, 2, "Sliding"]
-    gp_window_expanding_4 = ["", "", gp_name, 4, "Sliding"]
-    gp_window_expanding_8 = ["", "", gp_name, 8, "Sliding"]
-    gp_window_expanding_16 = ["", "", gp_name, 16, "Sliding"]
-    gp_window_expanding_32 = ["", "", gp_name, 32, "Sliding"]
+    gp_streamed_sliding_1 = ["", "", gp_name, 1, "Sliding"] # Sliding window now
+    gp_streamed_sliding_2 = ["", "", gp_name, 2, "Sliding"]
+    gp_streamed_sliding_4 = ["", "", gp_name, 4, "Sliding"]
+    gp_streamed_sliding_8 = ["", "", gp_name, 8, "Sliding"]
+    gp_streamed_sliding_16 = ["", "", gp_name, 16, "Sliding"]
+    gp_streamed_sliding_32 = ["", "", gp_name, 32, "Sliding"]
     models_gp = [gp_streamed_expanding_1, gp_streamed_expanding_2, gp_streamed_expanding_4, gp_streamed_expanding_8, gp_streamed_expanding_16, gp_streamed_expanding_32,
-        gp_window_expanding_1, gp_window_expanding_2, gp_window_expanding_4, gp_window_expanding_8, gp_window_expanding_16, gp_window_expanding_32]
+        gp_streamed_sliding_1, gp_streamed_sliding_2, gp_streamed_sliding_4, gp_streamed_sliding_8, gp_streamed_sliding_16, gp_streamed_sliding_32]
+    models_gp = [gp_streamed_sliding_16]
 
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_ar + models_gp
-    return models_all_no_ar, nc, nt, samples_per_epoch
+    return models_gp, nc, nt, samples_per_epoch
 
 # Attempts to recreate something like figure 2. Use plot_models_setup as helper for this func.
 def plot_models(helper_tuple):
@@ -368,15 +383,19 @@ def plot_models(helper_tuple):
     max_samples=samples_per_epoch
     #max_samples = 100
     return_samples=10
+
+    no_permutations=3 # DELETE
     prev_model, prev_cptk, prev_yml = None, None, None
     for mod_data, colour in zip(models, colours):
         mod_cptk, mod_yml, model_name = mod_data[0], mod_data[1], mod_data[2]
         print(model_name)
+        use_torch_grad = False
         # Handles GP case seperately
         if model_name == "Streamed GP":
             _, _, name_base, chunk_size, strat = mod_data
             model = GPStreamRBF(chunk_size=chunk_size, train_strat=strat)
             model_name += f' (chnk={chunk_size} - {strat})'
+            use_torch_grad = True # Need gradient to train the GP model
         else:
             model = get_model(mod_cptk, mod_yml)
             if len(mod_data) >= 4:
@@ -385,7 +404,7 @@ def plot_models(helper_tuple):
                 model.num_samples = mod_data[3]
             model.eval()
 
-        (mean_m_var, _,), (mean_m_nlls, _), m_var_nll_samples = exchange([model], get_plot_rbf(nc, nt, samples_per_epoch), no_permutations=no_permutations, device='cuda', use_autoreg_eq=use_autoreg_eq, max_samples=max_samples, seq_len=seq_len, return_samples=return_samples)
+        (mean_m_var, _,), (mean_m_nlls, _), m_var_nll_samples = exchange([model], get_plot_rbf(nc, nt, samples_per_epoch), no_permutations=no_permutations, device='cuda', use_autoreg_eq=use_autoreg_eq, max_samples=max_samples, seq_len=seq_len, return_samples=return_samples, use_torch_grad=use_torch_grad)
         samples_m_var = [x[0].item() for x in m_var_nll_samples]
         samples_m_nll = [x[1].item() for x in m_var_nll_samples]
         
