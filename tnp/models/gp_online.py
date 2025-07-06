@@ -34,11 +34,11 @@ class GPStream(nn.Module):
     def __init__(
         self,
         kernel_factory: Callable[[], gpytorch.kernels.Kernel], # GP Kernel (callable to create new one each time)
-        lr: float = 0.05, # LR for grad updates
-        n_steps: int = 10, # Number of grad steps per update
-        chunk_size: int = 1, # Size of chunks to be streamed in to model
-        train_strat: Literal["Expanding", "Sliding"] = "Expanding", # Whether to use an ever expanding window or a sliding one
-        device: str = "cuda",
+        lr:, # LR for grad updates
+        n_steps:, # Number of grad steps per update
+        chunk_size:, # Size of chunks to be streamed in to model
+        train_strat: Literal["Expanding", "Sliding"], # Whether to use an ever expanding window or a sliding one
+        device: str,
     ):
         super().__init__()
         self.lr = lr

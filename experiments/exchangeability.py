@@ -367,7 +367,7 @@ def plot_models_setup_rbf_same():
 
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_ar + models_gp
-    return models_tnp
+    return models_all_no_ar
 
 def extract_vars_from_folder_name(folder_name):
     patterns = {
@@ -396,6 +396,11 @@ def generate_folder_name(nc, nt, samples_per_epoch, no_permutations, batch_size,
 
 # Takes a folder with data written and plots the fig
 def plot_from_folder(folder):
+    # Plot hypers
+    max_samples_plot = 10 # Max number of samples
+    filter_ugly_thres = 0.0 #  Values not to include on plot
+    # End of plot hypers
+
     pars = extract_vars_from_folder_name(folder)
     nc, nt = pars["nc"], pars["nt"]
 
@@ -424,9 +429,11 @@ def plot_from_folder(folder):
         samples_m_nll = data["samples_m_nll"]
 
         # Hacky code - filters out ugly examples
-        idx_to_rem = [i for i in range(len(samples_m_nll)) if samples_m_nll[i] <= 0.0]
+        idx_to_rem = [i for i in range(len(samples_m_nll)) if samples_m_nll[i] <= filter_ugly_thres]
         samples_m_nll = [samples_m_nll[i] for i in range(len(samples_m_nll)) if i not in idx_to_rem]
         samples_m_var = [samples_m_var[i] for i in range(len(samples_m_var)) if i not in idx_to_rem]
+        samples_m_nll = samples_m_nll[:max_samples_plot] if len(samples_m_nll) >= max_samples_plot else samples_m_nll
+        samples_m_var = samples_m_var[:max_samples_plot] if len(samples_m_var) >= max_samples_plot else samples_m_var
 
 
         all_xs.extend(samples_m_var)
@@ -498,7 +505,6 @@ def gather_stats_models(helper_tuple, base_folder_name):
     nc, nt = 32, 128 
     samples_per_epoch = 4096 # How many datapoints in datasets
     no_permutations=64
-    no_permutations=3 # DELETE - done to make quicker whilst testing
     batch_size = 128
     use_autoreg_eq=False
     max_samples=samples_per_epoch
