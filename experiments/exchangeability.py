@@ -52,7 +52,7 @@ matplotlib.rcParams.update({
 )
 def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, perms_ctx: torch.Tensor, 
     gt_pred, return_sample_index: Optional[int] = None,
-    sub_batch_size=1024,
+    sub_batch_size=2048,
     use_torch_grad: bool = False):
     with torch.set_grad_enabled(use_torch_grad):
         is_gp_model = isinstance(tnp_model, GPStreamRBF)
@@ -365,7 +365,7 @@ def plot_models_setup_rbf_same():
     gp_streamed_sliding_32 = ["", "", gp_name, 32, "Sliding"]
     models_gp = [gp_streamed_expanding_1, gp_streamed_expanding_2, gp_streamed_expanding_4, gp_streamed_expanding_8, gp_streamed_expanding_16, gp_streamed_expanding_32,
         gp_streamed_sliding_1, gp_streamed_sliding_2, gp_streamed_sliding_4, gp_streamed_sliding_8, gp_streamed_sliding_16, gp_streamed_sliding_32]
-    models_gp = [gp_streamed_expanding_16]
+    models_gp = [gp_streamed_expanding_4, gp_streamed_expanding_8, gp_streamed_expanding_16, gp_streamed_expanding_32]
 
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_gp + models_ar
@@ -504,7 +504,7 @@ def plot_from_folder(folder):
 # Attempts to recreate something like figure 2. Use plot_models_setup as helper for this func.
 def gather_stats_models(helper_tuple, base_folder_name):
     # Exchange hyperparams
-    nc, nt = 32, 128 
+    nc, nt = 16, 128 
     samples_per_epoch = 4096 # How many datapoints in datasets
     no_permutations=64
     batch_size = 128

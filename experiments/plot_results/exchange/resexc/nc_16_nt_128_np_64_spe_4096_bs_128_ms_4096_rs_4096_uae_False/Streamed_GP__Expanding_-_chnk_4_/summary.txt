@@ -1,0 +1,5 @@
+--------------------
+Model_Name: Streamed GP (Expanding - chnk=4)
+Mean_M_Var: 817.6399590969086
+Mean_M_NLL: 13.076976925134659
+Samples_File (samples_m_var and samples_m_nll): samples.npz

@@ -1,5 +1,0 @@
---------------------
-Model_Name: incTNP-Batched
-Mean_M_Var: 1.4119139058249337
-Mean_M_NLL: 2.152332161154066
-Samples_File (samples_m_var and samples_m_nll): samples.npz

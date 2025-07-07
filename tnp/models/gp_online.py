@@ -94,7 +94,7 @@ class GPStream(nn.Module):
                     break
                 prev_loss = loss.detach()
             if not converged:
-                if False: print(f"GP Training not converged divergence max {max_diff:.10f} mean diff {mean_diff:.10f} tol {self.tol:.10f}")
+                if True: print(f"GP Training not converged divergence max {max_diff:.10f} mean diff {mean_diff:.10f} tol {self.tol:.10f}")
                 #print(likelihood.noise[:5])
             
         likelihood.eval()
@@ -115,7 +115,7 @@ class GPStream(nn.Module):
         else: raise ValueError(f"Invalid kernel: {self.kernel_name}")
         likelihood = gpytorch.likelihoods.GaussianLikelihood(batch_shape=torch.Size([m])).to(self.device)
         # Noise prior - TNP likely learns true noise over training so probably fair to give GP this info
-        noise_prior = False
+        noise_prior = True
         if noise_prior:
             likelihood.noise = torch.full((m,), 0.01, device=self.device)
             likelihood.register_prior(
@@ -145,7 +145,7 @@ class GPStreamRBF(GPStream):
         self,
         chunk_size: int,
         lr: float = 0.05, # LR for grad updates
-        n_steps: int = 25 * 2, # Number of grad steps per update
+        n_steps: int = 50, # Number of grad steps per update
         train_strat: Literal["Expanding", "Sliding"] = "Expanding",
         convergence_tolerance: float=1e-6, 
         device: str = "cuda",
