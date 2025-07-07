@@ -5,6 +5,7 @@ from torch import nn
 import gpytorch
 from check_shapes import check_shapes
 from typing import Callable, Optional, Literal
+import numpy as np
 
 
 class ExactGP(gpytorch.models.ExactGP):
@@ -85,6 +86,7 @@ class GPStream(nn.Module):
                 optimiser.step()
                 if prev_loss is not None:
                     mean_diff = torch.abs(prev_loss - loss).mean().item()
+                    max_diff = torch.abs(prev_loss - loss).max().item()
                     #print(f"Step {mean_diff:.10f}")
                 # Convergence check
                 if prev_loss is not None and torch.all(torch.abs(prev_loss - loss) < self.tol): 
@@ -92,7 +94,8 @@ class GPStream(nn.Module):
                     break
                 prev_loss = loss.detach()
             if not converged:
-                print(f"GP Training not converged divergence {mean_diff:.10f}")
+                if False: print(f"GP Training not converged divergence max {max_diff:.10f} mean diff {mean_diff:.10f} tol {self.tol:.10f}")
+                #print(likelihood.noise[:5])
             
         likelihood.eval()
         gp.eval()
@@ -108,9 +111,21 @@ class GPStream(nn.Module):
 
         # Constructs batched GP and optimiser
         if self.kernel_name == "rbf":
-            kernel = gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(batch_shape=torch.Size([m])),batch_shape=torch.Size([m]))
+            kernel = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(batch_shape=torch.Size([m])),batch_shape=torch.Size([m]))
         else: raise ValueError(f"Invalid kernel: {self.kernel_name}")
         likelihood = gpytorch.likelihoods.GaussianLikelihood(batch_shape=torch.Size([m])).to(self.device)
+        # Noise prior - TNP likely learns true noise over training so probably fair to give GP this info
+        noise_prior = False
+        if noise_prior:
+            likelihood.noise = torch.full((m,), 0.01, device=self.device)
+            likelihood.register_prior(
+                "noise_prior",
+                gpytorch.priors.LogNormalPrior(
+                    loc=np.log(0.01),
+                    scale=0.1,
+                ),
+                "noise"
+            )
         gp = ExactGP(likelihood=likelihood, kernel=kernel, batch_shape=torch.Size([m])).to(self.device)
         optimiser = torch.optim.Adam(gp.parameters(), lr=self.lr)
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, gp)
@@ -129,10 +144,10 @@ class GPStreamRBF(GPStream):
     def __init__(
         self,
         chunk_size: int,
-        lr: float = 0.001, # LR for grad updates
-        n_steps: int = 200, # Number of grad steps per update
+        lr: float = 0.05, # LR for grad updates
+        n_steps: int = 25 * 2, # Number of grad steps per update
         train_strat: Literal["Expanding", "Sliding"] = "Expanding",
-        convergence_tolerance: float=1e-4, 
+        convergence_tolerance: float=1e-6, 
         device: str = "cuda",
     ):
         super().__init__(kernel_name="rbf",

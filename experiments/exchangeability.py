@@ -72,6 +72,7 @@ def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
         m, _, dx = xc.shape
         nt = yt.shape[1]
         k_m = K * m
+        assert (is_gp_model and dy == 1) or not is_gp_model, "GP must have dy = 1"
 
         assert return_sample_index == None or (return_sample_index >= 0 and return_sample_index < m), "Invalid return index"
 
@@ -118,9 +119,10 @@ def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
 
             # Computes log likelihood
             if is_gp_model:
-                log_p_chunk = pred_dist.log_prob(chunk_yt.squeeze(-1)) # Dy must be = 1 for GP so squeeze to get log_p
-            else:
-                log_p_chunk = pred_dist.log_prob(chunk_yt)
+                # Computes marg (ie takes diagonal)
+                pred_dist = pred_dist.to_data_independent_dist()
+                pred_dist = td.Normal(loc=pred_dist.mean.unsqueeze(-1), scale=pred_dist.stddev.unsqueeze(-1)) # Expands for dy=1 term
+            log_p_chunk = pred_dist.log_prob(chunk_yt)
             all_log_probs.append(log_p_chunk)
 
             # Delete unused datastraight away - probably excessive but just to be sure
@@ -133,10 +135,10 @@ def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
         # Converts list to tensor required
         log_probs = torch.cat(all_log_probs, dim=0) # [K * m, nt, dy] 
         # Handles GP vs TNP cases seperately
-        if is_gp_model:
-            log_probs = log_probs.view(K, m) # [K, m]
-        else:
-            log_probs = log_probs.sum(dim=(-1, -2)).view(K, m)  # sums over nt and dy [K, m]
+        #if is_gp_model:
+        #    log_probs = log_probs.view(K, m) # [K, m]
+        
+        log_probs = log_probs.sum(dim=(-1, -2)).view(K, m)  # sums over nt and dy [K, m]
 
         variance = log_probs.var(dim=0, unbiased=True) # Variance over K - this is Var_PI from eq 5 in paper (this gives [m])
         m_var_val = variance.mean().item() # Mean over m batches sampled from D^(n) - ie the monte-carlo approximation of the expectation
@@ -339,8 +341,8 @@ def get_plot_rbf(nc, nt, samples_per_epoch, batch_size):
 # Attempts to recreate something like figure 2
 def plot_models_setup_rbf_same():
     # Defines each model
-    tnp_plain = ['experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200', "TNP-D"]
-    inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', "incTNP"]
+    tnp_plain = ['experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', "TNP-D"]
+    inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200', "incTNP"]
     inc_tnp_batched=['experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', "incTNP-Batched"]
     models_tnp = [tnp_plain, inc_tnp, inc_tnp_batched]
 
@@ -367,7 +369,7 @@ def plot_models_setup_rbf_same():
 
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_gp + models_ar
-    return models_all_no_ar
+    return models_gp
 
 def extract_vars_from_folder_name(folder_name):
     patterns = {
@@ -420,7 +422,7 @@ def plot_from_folder(folder):
             model_summary_txt = f.read()
         # Extracts from the summary fixed format
         lines = model_summary_txt.split("\n")
-        model_name = lines[1].split(" ")[1]
+        model_name = lines[1].split(": ")[1]
         mean_m_var = float(lines[2].split(" ")[1])
         mean_m_nlls = float(lines[3].split(" ")[1])
         npz_file = lines[4].split(": ")[1]
@@ -509,12 +511,7 @@ def gather_stats_models(helper_tuple, base_folder_name):
     use_autoreg_eq=False
     max_samples=samples_per_epoch
     return_samples=max_samples # essentially return as many as possible (but one per batch)
-    skip_existing_folders = True # Skips existing file writes - no need to do work again
-    # Silly test to be deleted hypers start here
-    nc, nt = 16, 32 
-    samples_per_epoch = 350
-    no_permutations=3
-    batch_size = 16
+    skip_existing_folders = False # Skips existing file writes - no need to do work again
     # End of hypers
 
     (models) = helper_tuple
