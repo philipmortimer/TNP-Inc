@@ -1,5 +1,5 @@
 --------------------
 Model_Name: TNP-D
-Mean_M_Var: 5.322500903556793e-10
-Mean_M_NLL: 10.357329949736595
+Mean_M_Var: 5.248969817822635e-10
+Mean_M_NLL: 10.35732987523079
 Samples_File (samples_m_var and samples_m_nll): samples.npz

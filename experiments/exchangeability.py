@@ -365,11 +365,12 @@ def plot_models_setup_rbf_same():
     gp_streamed_sliding_32 = ["", "", gp_name, 32, "Sliding"]
     models_gp = [gp_streamed_expanding_1, gp_streamed_expanding_2, gp_streamed_expanding_4, gp_streamed_expanding_8, gp_streamed_expanding_16, gp_streamed_expanding_32,
         gp_streamed_sliding_1, gp_streamed_sliding_2, gp_streamed_sliding_4, gp_streamed_sliding_8, gp_streamed_sliding_16, gp_streamed_sliding_32]
-    models_gp = [gp_streamed_expanding_4, gp_streamed_expanding_8, gp_streamed_expanding_16, gp_streamed_expanding_32]
+    models_gp_expanding = [gp_streamed_expanding_4, gp_streamed_expanding_8, gp_streamed_expanding_16]
+    models_gp_sliding = [gp_streamed_sliding_4, gp_streamed_sliding_8, gp_streamed_sliding_16]
 
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_gp + models_ar
-    return models_gp
+    return models_gp_sliding
 
 def extract_vars_from_folder_name(folder_name):
     patterns = {
@@ -511,7 +512,7 @@ def gather_stats_models(helper_tuple, base_folder_name):
     use_autoreg_eq=False
     max_samples=samples_per_epoch
     return_samples=max_samples # essentially return as many as possible (but one per batch)
-    skip_existing_folders = False # Skips existing file writes - no need to do work again
+    skip_existing_folders = True # Skips existing file writes - no need to do work again
     # End of hypers
 
     (models) = helper_tuple
@@ -529,7 +530,8 @@ def gather_stats_models(helper_tuple, base_folder_name):
         # Formats model names
         if model_name == "Streamed GP":
             _, _, name_base, chunk_size, strat = mod_data
-            model_name_fmt = model_name + f' ({strat} - chnk={chunk_size})'
+            gp_ext = "-E" if strat == "Expanding" else "-S"
+            model_name_fmt = model_name + gp_ext+ f' (ch={chunk_size})'
         elif model_name == "TNP-A":
             model_name_fmt = model_name + f' ({mod_data[3]} samples)'
         else: model_name_fmt = model_name

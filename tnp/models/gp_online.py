@@ -147,7 +147,7 @@ class GPStreamRBF(GPStream):
         lr: float = 0.05, # LR for grad updates
         n_steps: int = 50, # Number of grad steps per update
         train_strat: Literal["Expanding", "Sliding"] = "Expanding",
-        convergence_tolerance: float=1e-6, 
+        convergence_tolerance: float=1e-5, 
         device: str = "cuda",
     ):
         super().__init__(kernel_name="rbf",
