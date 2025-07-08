@@ -64,3 +64,14 @@ i=10 max_samples=4096 processed_so_far=1280
 i=11 max_samples=4096 processed_so_far=1408
 i=12 max_samples=4096 processed_so_far=1536
 i=13 max_samples=4096 processed_so_far=1664
+i=14 max_samples=4096 processed_so_far=1792
+i=15 max_samples=4096 processed_so_far=1920
+i=16 max_samples=4096 processed_so_far=2048
+i=17 max_samples=4096 processed_so_far=2176
+i=18 max_samples=4096 processed_so_far=2304
+i=19 max_samples=4096 processed_so_far=2432
+i=20 max_samples=4096 processed_so_far=2560
+i=21 max_samples=4096 processed_so_far=2688
+i=22 max_samples=4096 processed_so_far=2816
+i=23 max_samples=4096 processed_so_far=2944
+i=24 max_samples=4096 processed_so_far=3072
