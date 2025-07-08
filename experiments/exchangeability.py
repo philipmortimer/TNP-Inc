@@ -439,7 +439,7 @@ def plot_from_folder(folder):
         # Extracts from the summary fixed format
         lines = model_summary_txt.split("\n")
         model_name = lines[1].split(": ")[1]
-        if model_name.startswith("Streamed GP-S"): continue
+        if model_name.startswith("Streamed GP"): continue
         mean_m_var = float(lines[2].split(" ")[1])
         mean_m_nlls = float(lines[3].split(" ")[1])
         npz_file = lines[4].split(": ")[1]
