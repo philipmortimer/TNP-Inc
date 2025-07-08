@@ -57,11 +57,12 @@ class GPStream(nn.Module):
     @check_shapes(
         "xc: [m, nc, dx]", "yc: [m, nc, 1]"
     )
-    def _stream_through_gp(self, gp, likelihood, optimiser, mll, xc, yc):
+    def _stream_through_gp(self, gp, likelihood, mll, xc, yc):
         m, nc, dx = xc.shape
         likelihood.train()
         gp.train()
         for i in range(0, nc, self.chunk_size):
+            optimiser = torch.optim.Adam(gp.parameters(), lr=self.lr) # Creates new optimiser (to be properly retraining)
             end = min(i + self.chunk_size, nc)
             cur_chunk_size = end - i
 
@@ -127,10 +128,9 @@ class GPStream(nn.Module):
                 "noise"
             )
         gp = ExactGP(likelihood=likelihood, kernel=kernel, batch_shape=torch.Size([m])).to(self.device)
-        optimiser = torch.optim.Adam(gp.parameters(), lr=self.lr)
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, gp)
 
-        self._stream_through_gp(gp, likelihood, optimiser, mll, xc, yc)
+        self._stream_through_gp(gp, likelihood, mll, xc, yc)
 
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
             function_dist = gp(xt)

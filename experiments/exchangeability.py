@@ -372,7 +372,7 @@ def plot_models_setup_rbf_same():
 
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_gp + models_ar
-    return models_ar
+    return models_gp_expanding
 
 def extract_vars_from_folder_name(folder_name):
     patterns = {
@@ -404,13 +404,26 @@ def plot_from_folder(folder):
     # Plot hypers
     max_samples_plot = 10 # Max number of samples
     filter_ugly_thres = 0.0 #  Values not to include on plot
+    max_dist_from_centroid = 100
     # End of plot hypers
 
     pars = extract_vars_from_folder_name(folder)
     nc, nt = pars["nc"], pars["nt"]
 
     data_directory = Path(folder)
-    model_folders = [p for p in data_directory.iterdir() if p.is_dir()]
+    model_folders_unstr = [p for p in data_directory.iterdir() if p.is_dir()]
+    # Imposes plot ordering
+    remaining_folders = set(model_folders_unstr)
+    order = ["TNP-D", "incTNP", "incTNP-Batched", "TNP-A", "Streamed GP-E"]
+    model_folders = []
+    for prefix in order:
+        matches = [p for p in remaining_folders if p.name.startswith(prefix)]
+        if matches:
+            matches.sort(key=lambda p: p.name)
+            model_folders.extend(matches)
+            remaining_folders.difference_update(matches)
+    if remaining_folders:
+        model_folders.extend(sorted(list(remaining_folders), key=lambda p: p.name))
 
     # Colour pallete to use
     tableau_colorblind_10 = ['#006BA4','#FF800E','#ABABAB','#595959','#5F9ED1','#C85200','#898989','#A2C8EC','#FFBC79','#CFCFCF']
@@ -426,6 +439,7 @@ def plot_from_folder(folder):
         # Extracts from the summary fixed format
         lines = model_summary_txt.split("\n")
         model_name = lines[1].split(": ")[1]
+        if model_name.startswith("Streamed GP-S"): continue
         mean_m_var = float(lines[2].split(" ")[1])
         mean_m_nlls = float(lines[3].split(" ")[1])
         npz_file = lines[4].split(": ")[1]
@@ -434,6 +448,7 @@ def plot_from_folder(folder):
         samples_m_nll = data["samples_m_nll"]
 
         # Hacky code - filters out ugly examples
+        print(len(samples_m_nll))
         idx_to_rem = [i for i in range(len(samples_m_nll)) if samples_m_nll[i] <= filter_ugly_thres]
         samples_m_nll = [samples_m_nll[i] for i in range(len(samples_m_nll)) if i not in idx_to_rem]
         samples_m_var = [samples_m_var[i] for i in range(len(samples_m_var)) if i not in idx_to_rem]
