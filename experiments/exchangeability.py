@@ -348,7 +348,9 @@ def plot_models_setup_rbf_same():
 
     tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
     tnp_ar_50 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 50]
-    models_ar = [tnp_ar_50]
+    tnp_ar_10 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 10]
+    tnp_ar_20 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 20]
+    models_ar = [tnp_ar_10, tnp_ar_20]
 
     gp_name = "Streamed GP"
     gp_streamed_expanding_1 = ["", "", gp_name, 1, "Expanding"]
@@ -370,7 +372,7 @@ def plot_models_setup_rbf_same():
 
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_gp + models_ar
-    return models_gp_sliding
+    return models_ar
 
 def extract_vars_from_folder_name(folder_name):
     patterns = {

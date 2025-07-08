@@ -1,0 +1,65 @@
+TNP-A (10 samples)
+[rank: 0] Seed set to 1
+[rank: 0] Seed set to 1
+wandb:   1 of 1 files downloaded.  
+[rank: 0] Seed set to 0
+/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/linear_operator/utils/cholesky.py:40: NumericalWarning: A not p.d., added jitter of 1.0e-06 to the diagonal
+  warnings.warn(
+/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/linear_operator/utils/cholesky.py:40: NumericalWarning: A not p.d., added jitter of 1.0e-05 to the diagonal
+  warnings.warn(
+/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/linear_operator/utils/cholesky.py:40: NumericalWarning: A not p.d., added jitter of 1.0e-04 to the diagonal
+  warnings.warn(
+i=1 max_samples=4096 processed_so_far=128
+i=2 max_samples=4096 processed_so_far=256
+i=3 max_samples=4096 processed_so_far=384
+i=4 max_samples=4096 processed_so_far=512
+i=5 max_samples=4096 processed_so_far=640
+i=6 max_samples=4096 processed_so_far=768
+i=7 max_samples=4096 processed_so_far=896
+i=8 max_samples=4096 processed_so_far=1024
+i=9 max_samples=4096 processed_so_far=1152
+i=10 max_samples=4096 processed_so_far=1280
+i=11 max_samples=4096 processed_so_far=1408
+i=12 max_samples=4096 processed_so_far=1536
+i=13 max_samples=4096 processed_so_far=1664
+i=14 max_samples=4096 processed_so_far=1792
+i=15 max_samples=4096 processed_so_far=1920
+i=16 max_samples=4096 processed_so_far=2048
+i=17 max_samples=4096 processed_so_far=2176
+i=18 max_samples=4096 processed_so_far=2304
+i=19 max_samples=4096 processed_so_far=2432
+i=20 max_samples=4096 processed_so_far=2560
+i=21 max_samples=4096 processed_so_far=2688
+i=22 max_samples=4096 processed_so_far=2816
+i=23 max_samples=4096 processed_so_far=2944
+i=24 max_samples=4096 processed_so_far=3072
+i=25 max_samples=4096 processed_so_far=3200
+i=26 max_samples=4096 processed_so_far=3328
+i=27 max_samples=4096 processed_so_far=3456
+i=28 max_samples=4096 processed_so_far=3584
+i=29 max_samples=4096 processed_so_far=3712
+i=30 max_samples=4096 processed_so_far=3840
+i=31 max_samples=4096 processed_so_far=3968
+i=32 max_samples=4096 processed_so_far=4096
+--------------------
+Model_Name: TNP-A (10 samples)
+Mean_M_Var: 1189.092753648758
+Mean_M_NLL: 28.358875274658203
+Samples_File (samples_m_var and samples_m_nll): samples.npz
+TNP-A (20 samples)
+[rank: 0] Seed set to 1
+[rank: 0] Seed set to 1
+wandb:   1 of 1 files downloaded.  
+[rank: 0] Seed set to 0
+i=1 max_samples=4096 processed_so_far=128
+i=2 max_samples=4096 processed_so_far=256
+i=3 max_samples=4096 processed_so_far=384
+i=4 max_samples=4096 processed_so_far=512
+i=5 max_samples=4096 processed_so_far=640
+i=6 max_samples=4096 processed_so_far=768
+i=7 max_samples=4096 processed_so_far=896
+i=8 max_samples=4096 processed_so_far=1024
+i=9 max_samples=4096 processed_so_far=1152
+i=10 max_samples=4096 processed_so_far=1280
+i=11 max_samples=4096 processed_so_far=1408
+i=12 max_samples=4096 processed_so_far=1536
