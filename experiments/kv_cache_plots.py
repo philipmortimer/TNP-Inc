@@ -7,6 +7,7 @@ import numpy as np
 import time
 import matplotlib.pyplot as plt
 import matplotlib
+from tqdm import tqdm
 
 np.set_printoptions(threshold=np.inf) # Prints the whole numpy array for the file
 
@@ -374,13 +375,140 @@ def compare_kv_against_none(strategy="fixed", targets=128):
     fig.tight_layout()
     plt.savefig(memory_file_name, dpi=300)
 
-    
+
+# Compares decoding time w / w out KV caching
+@torch.no_grad
+def compare_decoding_times():
+    # Compare params
+    burn_in = 1 # Number of burn in runs to ignore
+    aggregate_over = 1 # Number of runs to aggregate data over
+    token_step = 1 # How many increments of tokens to go up in
+    min_nc = 1
+    max_nc = 500
+    dx, dy, m = 1, 1, 1
+    # End of params
+    device='cuda'
+    model = get_model('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', device=device)
+    model.eval()
+    context_sizes = np.arange(start=min_nc, stop=max_nc, step=token_step, dtype=int)
+    runtime = np.zeros((aggregate_over, len(context_sizes)))
+    memory = np.zeros((aggregate_over, len(context_sizes)))
+    max_high = 2
+    xcs = (torch.rand((m, max_nc, dx), device=device) * max_high * 2) - max_high
+    ycs = (torch.rand((m, max_nc, dy), device=device) * max_high * 2) - max_high
+
+    runtime_no_kv = np.zeros((aggregate_over, len(context_sizes)))
+    runtime_kv = np.zeros((aggregate_over, len(context_sizes)))
+    memory_kv = np.zeros((aggregate_over, len(context_sizes)))
+    memory_no_kv = np.zeros((aggregate_over, len(context_sizes)))
+    # Measures memory and runtime for model with no KV cache
+    starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+    i = 0
+    for ctx_size in tqdm(context_sizes, desc="Comparing context sizes"):
+        xc = xcs[:, :ctx_size, :]
+        yc = ycs[:, :ctx_size, :]
+        for j in range(burn_in + aggregate_over):
+            # Measures kv runtime and memory
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.synchronize()
+            starter.record()
+            with torch.no_grad():
+                xc_ordered, yc_ordered = model.kv_cached_greedy_variance_ctx_builder(xc, yc)
+            ender.record()
+            torch.cuda.synchronize()
+            peak_memory_mb_kv = torch.cuda.max_memory_allocated() / (1024 * 1024)
+            update_time_ms_kv = starter.elapsed_time(ender)
+
+            # Measures no kv runtime and memory
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.synchronize()
+            starter.record()
+            with torch.no_grad():
+                xc_ordered, yc_ordered = model.greedy_variance_ctx_builder(xc, yc)
+            ender.record()
+            torch.cuda.synchronize()
+            peak_memory_mb_no_kv = torch.cuda.max_memory_allocated() / (1024 * 1024)
+            update_time_ms_no_kv = starter.elapsed_time(ender)
+
+            # Records results
+            write_idx = j - burn_in
+            if write_idx >= 0:
+                runtime_no_kv[write_idx, i] = update_time_ms_no_kv
+                memory_no_kv[write_idx, i] = peak_memory_mb_no_kv
+                runtime_kv[write_idx, i] = update_time_ms_kv
+                memory_kv[write_idx, i] = peak_memory_mb_kv
+        i += 1
+
+    # Aggregates results
+    memory_no_kv_std  = memory_no_kv.std(axis=0, ddof=1)
+    memory_kv_std  = memory_kv.std(axis=0, ddof=1)
+    runtime_kv_std = runtime_kv.std(axis=0, ddof=1)
+    runtime_no_kv_std = runtime_no_kv.std(axis=0, ddof=1)
+
+    runtime_no_kv = np.mean(runtime_no_kv, axis=0)
+    memory_no_kv = np.mean(memory_no_kv, axis=0)
+    runtime_kv = np.mean(runtime_kv, axis=0)
+    memory_kv = np.mean(memory_kv, axis=0)
+
+
+    # Plots memory
+    memory_file_name = f'experiments/plot_results/kv/decoding_kv_vs_none.png'
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(context_sizes, memory_no_kv, label='No Caching')
+    confidence_bars = False
+    if confidence_bars:
+        ci95 = 1.96 * memory_no_kv_std / np.sqrt(aggregate_over)
+        ax.fill_between(context_sizes,
+                        memory_no_kv - ci95,
+                        memory_no_kv + ci95,
+                        alpha=0.25,)
+    ax.plot(context_sizes, memory_kv, label='KV Caching')
+    if confidence_bars:
+        ci95 = 1.96 * memory_kv_std / np.sqrt(aggregate_over)
+        ax.fill_between(context_sizes,
+                        memory_kv - ci95,
+                        memory_kv + ci95,
+                        alpha=0.25,)
+    ax.set_xlabel('Context Size')
+    ax.set_ylabel('Peak Memory Usage (MB)')
+    ax.legend()
+    ax.set_title(f'Greedy Ordering Memory Usage as Context Size Increases')
+    ax.grid(True, linestyle='--', alpha=0.4)
+    fig.tight_layout()
+    plt.savefig(memory_file_name, dpi=300)
+
+    # Plots runtime
+    memory_file_name = f'experiments/plot_results/kv/runtime_decoding_kv_vs_none.png'
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(context_sizes, runtime_no_kv, label='No Caching')
+    confidence_bars = False
+    if confidence_bars:
+        ci95 = 1.96 * runtime_no_kv_std / np.sqrt(aggregate_over)
+        ax.fill_between(context_sizes,
+                        runtime_no_kv - ci95,
+                        runtime_no_kv + ci95,
+                        alpha=0.25,)
+    ax.plot(context_sizes, runtime_kv, label='KV Caching')
+    if confidence_bars:
+        ci95 = 1.96 * runtime_kv_std / np.sqrt(aggregate_over)
+        ax.fill_between(context_sizes,
+                        runtime_kv - ci95,
+                        runtime_kv + ci95,
+                        alpha=0.25,)
+    ax.set_xlabel('Context Size')
+    ax.set_ylabel('Runtime (ms)')
+    ax.set_title(f'Greedy Ordering Runtime as Context Size Increases')
+    ax.legend()
+    ax.grid(True, linestyle='--', alpha=0.4)
+    fig.tight_layout()
+    plt.savefig(memory_file_name, dpi=300)
 
 
 if __name__ == "__main__":
+    compare_decoding_times()
     #test_kv_cache()
     #measure_condition_time_memory_kv()
-    compare_kv_against_none(strategy="fixed", targets=128)
+    #compare_kv_against_none(strategy="fixed", targets=128)
     #compare_kv_against_none(strategy="scale")
     #compare_kv_against_none(strategy="fixed", targets=512)
     #compare_kv_against_none(strategy="fixed", targets=2048)
