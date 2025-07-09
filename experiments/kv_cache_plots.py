@@ -382,15 +382,16 @@ def compare_decoding_times():
     # Compare params
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 1 # Number of runs to aggregate data over
-    token_step = 1 # How many increments of tokens to go up in
+    token_step = 5 # How many increments of tokens to go up in
     min_nc = 1
-    max_nc = 500
+    max_nc = 100
     dx, dy, m = 1, 1, 1
     # End of params
     device='cuda'
     model = get_model('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', device=device)
     model.eval()
     context_sizes = np.arange(start=min_nc, stop=max_nc, step=token_step, dtype=int)
+    #print(context_sizes)
     runtime = np.zeros((aggregate_over, len(context_sizes)))
     memory = np.zeros((aggregate_over, len(context_sizes)))
     max_high = 2
