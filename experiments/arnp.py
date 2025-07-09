@@ -16,9 +16,11 @@ import numpy as np
 
 
 @check_shapes(
-    "xt: [m, nt, dx]", "yt: [m, nt, dy]"
+    "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]",
 )
-def _shuffle_targets(np_model: nn.Module, xt, yt, order: Literal["random", "given", "left-to-right"]):
+@torch.no_grad
+def _shuffle_targets(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor,
+    order: Literal["random", "given", "left-to-right", "variance"]):
     m, nt, dx = xt.shape
     _, _, dy = yt.shape
     device = xt.device
@@ -39,14 +41,27 @@ def _shuffle_targets(np_model: nn.Module, xt, yt, order: Literal["random", "give
         xt_sorted = torch.gather(xt, 1, perm_x)
         yt_sorted = torch.gather(yt, 1, perm_y)
         return xt_sorted, yt_sorted
+    elif order == "variance":
+        # Predicts all target points conditioned on context points and orders (highest variance first) - this is obviously much more expensive
+        batch = Batch(xc=xc, yc=yc, xt=xt, yt=yt, x=torch.cat((xc, xt), dim=1), y=torch.cat((yc, yt), dim=1))
+        pred_dist = np_pred_fn(np_model, batch)
+        var = pred_dist.variance.mean(-1) # Gets variance (averaged over dy) [m, nt]
+        perm = torch.argsort(var, dim=1, descending=True)
+        perm_x = perm.unsqueeze(-1).expand(-1, -1, dx)
+        perm_y = perm.unsqueeze(-1).expand(-1, -1, dy)
+        xt_sorted = torch.gather(xt, 1, perm_x)
+        yt_sorted = torch.gather(yt, 1, perm_y)
+        return xt_sorted, yt_sorted
+
+
 
 @check_shapes(
     "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]", "return: [m]"
 )
 @torch.no_grad
 def ar_loglik(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor,
-    normalise: bool = True, order: Literal["random", "given", "left-to-right"] = "random") -> torch.Tensor:
-    xt, yt = _shuffle_targets(np_model, xt, yt, order)
+    normalise: bool = True, order: Literal["random", "given", "left-to-right", "variance"] = "random") -> torch.Tensor:
+    xt, yt = _shuffle_targets(np_model, xc, yc, xt, yt, order)
     m, nt, dx = xt.shape
     _, nc, dy = yc.shape
     log_probs = torch.zeros((m), device=xt.device)
@@ -66,11 +81,25 @@ def ar_loglik(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch
     return log_probs
 
 
+@check_shapes(
+    "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]"
+)
+@torch.no_grad
+def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
+    order: Literal["random", "given", "left-to-right", "variance"] = "random"):
+    m, nt, dx = xt.shape
+    _, nc, dy = yc.shape
+
+
+
 
 # -------------------------------------------------------------------------------------------------------
 
 # Compares NP models in AR mode on RBF set
-def compare_rbf_models(out_txt_file: str, device: str = "cuda"):
+def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
+    # Hypers to select - also look at dataset hypers
+    ordering = "variance"
+    # End of hypers
     # List of models to compare
     tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml',
         'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', 'TNP-D')
@@ -91,7 +120,7 @@ def compare_rbf_models(out_txt_file: str, device: str = "cuda"):
     nt= 128
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
-    samples_per_epoch = 500
+    samples_per_epoch = 4_096
     batch_size = 16
     noise_std = 0.1
     deterministic = True
@@ -113,16 +142,16 @@ def compare_rbf_models(out_txt_file: str, device: str = "cuda"):
         model.eval()
         for batch in tqdm(data, desc=f'{model_name} eval'):
             ll = ar_loglik(np_model=model, xc=batch.xc.to(device), yc=batch.yc.to(device),
-                xt=batch.xt.to(device), yt=batch.yt.to(device), normalise=True, order="random")
+                xt=batch.xt.to(device), yt=batch.yt.to(device), normalise=True, order=ordering)
             mean_ll = torch.mean(ll).item() # Goes from [m] to a float
             ll_list.append(mean_ll)
         ll_average = np.mean(ll_list)
         mod_sum = ("-" * 20) + f"\nModel: {model_name}\nMean LL: {mean_ll}\n"
         print(mod_sum)
         out_txt += mod_sum
-    with open(out_txt_file, 'w') as file:
+    with open(out_txt_file + f'_{ordering}.txt', 'w') as file:
         file.write(out_txt)
 
 
 if __name__ == "__main__":
-    compare_rbf_models(out_txt_file="experiments/plot_results/ar/ar_rbf_comp.txt")
+    compare_rbf_models(base_out_txt_file="experiments/plot_results/ar/ar_rbf_comp")
