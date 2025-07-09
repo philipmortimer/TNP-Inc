@@ -1,0 +1,13 @@
+--------------------
+Model: TNP-D
+Mean LL: 0.763256311416626--------------------
+Model: incTNP
+Mean LL: 0.7819342613220215--------------------
+Model: incTNP-Batched
+Mean LL: 0.7902700901031494--------------------
+Model: incTNP-Batched (Prior)
+Mean LL: 0.7841335535049438--------------------
+Model: CNP
+Mean LL: 0.5013816356658936--------------------
+Model: ConvCNP
+Mean LL: 0.6630513668060303
