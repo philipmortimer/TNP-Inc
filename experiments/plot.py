@@ -161,9 +161,10 @@ def plot(
         if wandb.run is not None and logging:
             wandb.log({fname: wandb.Image(fig)})
         elif savefig:
-            if not os.path.isdir(f"fig/{name}"):
-                os.makedirs(f"fig/{name}")
-            plt.savefig(fname, bbox_inches="tight")
+            save_name = f"{name}/{i:03d}"
+            #if not os.path.isdir(f"fig/{name}"):
+            #    os.makedirs(f"fig/{name}")
+            plt.savefig(save_name, bbox_inches="tight")
         else:
             plt.show()
 

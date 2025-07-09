@@ -4,7 +4,7 @@
 import torch
 from check_shapes import check_shapes
 from torch import nn
-from typing import Optional, Union, Literal, Callable
+from typing import Optional, Union, Literal, Callable, Tuple
 from tnp.utils.np_functions import np_pred_fn
 from tnp.data.base import Batch
 from plot_adversarial_perms import get_model
@@ -13,6 +13,7 @@ from tnp.networks.gp import RBFKernel
 from functools import partial
 from tqdm import tqdm
 import numpy as np
+import torch.distributions as td
 
 
 @check_shapes(
@@ -25,7 +26,8 @@ def _shuffle_targets(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt
     _, _, dy = yc.shape
     device = xt.device
     if order == "given":
-        return xt, yt
+        perm = torch.arange(nt, device=device).repeat(m, 1)
+        return xt, yt, perm
     elif order == "random":
         perm = torch.rand(m, nt, device=device).argsort(dim=1)
         perm_x = perm.unsqueeze(-1).expand(-1, -1, dx)
@@ -34,7 +36,7 @@ def _shuffle_targets(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt
             perm_y = perm.unsqueeze(-1).expand(-1, -1, dy)
             yt_shuffled = torch.gather(yt, 1, perm_y)
         else: yt_shuffled = None
-        return xt_shuffled, yt_shuffled
+        return xt_shuffled, yt_shuffled, perm
     elif order == "left-to-right":
         assert dx == 1, "left-to-right ordering only supported for one dimensional dx"
         perm = torch.argsort(xt.squeeze(-1), dim=1)
@@ -44,10 +46,10 @@ def _shuffle_targets(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt
             perm_y = perm.unsqueeze(-1).expand(-1, -1, dy)
             yt_sorted = torch.gather(yt, 1, perm_y)
         else: yt_sorted = None
-        return xt_sorted, yt_sorted
+        return xt_sorted, yt_sorted, perm
     elif order == "variance":
         # Predicts all target points conditioned on context points and orders (highest variance first) - this is obviously much more expensive
-        batch = Batch(xc=xc, yc=yc, xt=xt, yt=yt, x=torch.cat((xc, xt), dim=1), y=torch.cat((yc, yt), dim=1))
+        batch = Batch(xc=xc, yc=yc, xt=xt, yt=None, x=None, y=None)
         pred_dist = np_pred_fn(np_model, batch)
         var = pred_dist.variance.mean(-1) # Gets variance (averaged over dy) [m, nt]
         perm = torch.argsort(var, dim=1, descending=True)
@@ -57,7 +59,7 @@ def _shuffle_targets(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt
             perm_y = perm.unsqueeze(-1).expand(-1, -1, dy)
             yt_sorted = torch.gather(yt, 1, perm_y)
         else: yt_sorted = None
-        return xt_sorted, yt_sorted
+        return xt_sorted, yt_sorted, perm
 
 
 
@@ -67,7 +69,7 @@ def _shuffle_targets(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt
 @torch.no_grad
 def ar_loglik(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor,
     normalise: bool = True, order: Literal["random", "given", "left-to-right", "variance"] = "random") -> torch.Tensor:
-    xt, yt = _shuffle_targets(np_model, xc, yc, xt, yt, order)
+    xt, yt, _ = _shuffle_targets(np_model, xc, yc, xt, yt, order)
     np_model.eval()
     m, nt, dx = xt.shape
     _, nc, dy = yc.shape
@@ -89,7 +91,7 @@ def ar_loglik(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch
 
 
 UpdateCtxAndQueryTgtFuncs = Tuple[
-    Callable[[int], None] # Initialise function
+    Callable[[int], None], # Initialise function
     Callable[[torch.Tensor, torch.Tensor], None],  # inc_ctxt_update
     Callable[[torch.Tensor], td.Distribution]     # query_tgt
 ]
@@ -102,16 +104,18 @@ UpdateCtxAndQueryTgtFuncs = Tuple[
 def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     order: Literal["random", "given", "left-to-right", "variance"] = "random",
     num_samples: int = 10,
-    inc_ctx_and_query: Optional[UpdateCtxAndQueryTgtFuncs] = None
+    inc_ctx_and_query: Optional[UpdateCtxAndQueryTgtFuncs] = None,
     ):
     m, nt, dx = xt.shape
     _, nc, dy = yc.shape
     device = xt.device
-    xt, _ = _shuffle_targets(np_model, xc, yc, xt, None, order) # Should I shuffle before or after stacking?
 
     xc_stacked = _stack(xc, num_samples=num_samples, dim=0)
     yc_stacked = _stack(yc, num_samples=num_samples, dim=0)
     xt_stacked = _stack(xt, num_samples=num_samples, dim=0)
+
+    xt_stacked, _, perm = _shuffle_targets(model, xc_stacked, yc_stacked, xt_stacked, None, order) # Should I shuffle before or after stacking?
+
     yt_preds_mean, yt_preds_std = torch.empty((m * num_samples, nt, dy), device=device), torch.empty((m * num_samples, nt, dy), device=device)
 
     if inc_ctx_and_query is not None:
@@ -131,23 +135,29 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
         yt_preds_mean[:,i:i+1,:] = pred_mean
         yt_preds_std[:,i:i+1,:] = pred_std
         # Samples from the predictive distribution and updates the context
-        if i < nt:
+        if i < nt - 1:
             yt_sampled = pred_dist.sample() # [m * num_samples, 1, dy]
             if inc_ctx_and_query is None:
                 xc_stacked = torch.cat((xc_stacked, xt_tmp), dim=1)
                 yc_stacked = torch.cat((yc_stacked, yt_sampled), dim=1)
             else:
                 inc_update(xt_tmp, yt_sampled)
-    # TODO: Check where to permute, remove noise from samples and fix bugs
-    # Returns a mixture of gaussians of all the predicted distributions
-    yt_preds_mean = yt_preds_mean.view(m, num_samples, nt, dy)
-    yt_preds_std = yt_preds_std.view(m, num_samples, nt, dy)
+    # Unshuffles the target ordering to be in line with what was passed in
+    inv_perm = perm.argsort(dim=1)
+    idx = inv_perm.unsqueeze(-1).expand(-1, -1, dy)
+    yt_preds_mean = yt_preds_mean.gather(dim=1, index=idx)
+    yt_preds_std  = yt_preds_std .gather(dim=1, index=idx)
+
+    yt_preds_mean = yt_preds_mean.view(num_samples, m, nt, dy)
+    yt_preds_std = yt_preds_std.view(num_samples, m, nt, dy)
     # Permutes to [m, nt, dy, num_samples]
     yt_preds_mean = yt_preds_mean.permute(1,2,3,0)
     yt_preds_std  = yt_preds_std.permute(1,2,3,0)
     mix  = td.Categorical(torch.full((m, nt, dy, num_samples), 1.0 / num_samples, device=device))
     comp = td.Normal(yt_preds_mean, yt_preds_std)
     approx_dist = td.MixtureSameFamily(mix, comp)
+
+    # For sample draws return raw samples and run through model again for smooth samples (see paper / code)
     return approx_dist
 
 
@@ -155,30 +165,28 @@ def _stack(x, num_samples, dim):
     return torch.stack([x] * num_samples, dim=dim)
 
 
-
-
-
 # -------------------------------------------------------------------------------------------------------
 
-# Compares NP models in AR mode on RBF set
-def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
-    # Hypers to select - also look at dataset hypers
-    ordering = "random"
+# Plots a handful of kernels
+def plot_ar_unrolls():
+    # Hypers
+    no_kernels = 5
     # End of hypers
-    # List of models to compare
-    tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml',
-        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', 'TNP-D')
-    incTNP = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
-        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200', 'incTNP')
-    batchedTNP = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml',
-        'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'incTNP-Batched')
-    priorBatched = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'incTNP-Batched (Prior)')
-    cnp = ('experiments/configs/synthetic1dRBF/gp_cnp_rangesame.yml',
-        'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP')
-    conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
-        'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
-    models = [tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
+    models = get_model_list()
+    data = get_rbf_rangesame_testset()
+    for (model_yml, model_wab, model_name) in models:
+        model = get_model(model_yml, model_wab, seed=False, device=device)
+        model.eval()
+
+        def pred_fn_pred(batch, predict_without_yt_tnpa=True):
+            return ar_predict(model, batch.xc, batch.yc, batch.xt)
+
+        plot(model=model, batches=data, num_fig=no_kernels, name="",
+            savefig=True, logging=False, pred_fn=pred_fn_pred)
+            
+
+
+def get_rbf_rangesame_testset():
     # RBF Dataset
     min_nc = 1
     max_nc = 64
@@ -199,7 +207,33 @@ def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
         context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=noise_std,
         deterministic=deterministic, kernel=kernels)
     data = list(gen_test)
+    return data
+
+def get_model_list():
+    # List of models to compare
+    tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml',
+        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', 'TNP-D')
+    incTNP = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200', 'incTNP')
+    batchedTNP = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml',
+        'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'incTNP-Batched')
+    priorBatched = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'incTNP-Batched (Prior)')
+    cnp = ('experiments/configs/synthetic1dRBF/gp_cnp_rangesame.yml',
+        'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP')
+    conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
+        'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
+    models = [tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
+    return models
+
+# Compares NP models in AR mode on RBF set
+def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
+    # Hypers to select - also look at dataset hypers
+    ordering = "random"
+    # End of hypers
     # Main loop - loads each model than compares writes performances to a text file
+    models = get_model_list()
+    data = get_rbf_rangesame_testset()
     out_txt = ""
     for (model_yml, model_wab, model_name) in models:
         ll_list = []
@@ -211,7 +245,7 @@ def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
             mean_ll = torch.mean(ll).item() # Goes from [m] to a float
             ll_list.append(mean_ll)
         ll_average = np.mean(ll_list)
-        mod_sum = ("-" * 20) + f"\nModel: {model_name}\nMean LL: {mean_ll}\n"
+        mod_sum = ("-" * 20) + f"\nModel: {model_name}\nMean LL: {ll_average}\n"
         print(mod_sum)
         out_txt += mod_sum
     with open(base_out_txt_file + f'_{ordering}.txt', 'w') as file:
