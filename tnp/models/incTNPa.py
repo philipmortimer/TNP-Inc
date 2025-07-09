@@ -81,11 +81,10 @@ class ARincTNPEncoder(nn.Module):
         num_all = num_ctx + num_tar
         mask = torch.zeros((num_all+num_tar, num_all+num_tar), device=device).fill_(float('-inf'))
         mask[:, :num_ctx] = 0.0 # all points attend to context points
-        mask[:num_ctx, :num_ctx].triu_(diagonal=1).fill_(float('-inf')) # incTNP causal mask - context points can only attend to preceding context points -> enabling effecient incremenal AR updates.
-        print(mask[:num_ctx, :num_ctx])
+        ctx_causal_mask = torch.ones(num_ctx, num_ctx, dtype=torch.bool, device=device).triu(diagonal=1)
+        mask[:num_ctx, :num_ctx].masked_fill_(ctx_causal_mask, float('-inf')) # incTNP causal mask - context points can only attend to preceding context points -> enabling effecient incremenal AR updates.
         mask[num_ctx:num_all, num_ctx:num_all].triu_(diagonal=1) # each real target point attends to itself and precedding real target points
         mask[num_all:, num_ctx:num_all].triu_(diagonal=0) # each fake target point attends to preceeding real target points
-
         return mask, num_tar
 
 class incTNPA(ARTNPNeuralProcess):

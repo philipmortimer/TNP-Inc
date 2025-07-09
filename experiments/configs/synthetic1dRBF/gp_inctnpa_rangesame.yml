@@ -53,14 +53,14 @@ rbf_kernel:
   max_log10_lengthscale: ${params.max_log10_lengthscale}
 
 model:
-  _target_: tnp.models.tnpa.incTNPA
+  _target_: tnp.models.incTNPa.incTNPA
   encoder: ${tnp_encoder}
   decoder: ${tnp_decoder}
   likelihood: ${likelihood}
   no_samples_rollout_pred: ${params.num_samples_pred}
 
 tnp_encoder:
-  _target_: tnp.models.tnpa.ARincTNPEncoder
+  _target_: tnp.models.incTNPa.ARincTNPEncoder
   transformer_encoder: ${transformer_encoder}
   xy_encoder: ${xy_encoder}
 
@@ -126,7 +126,7 @@ params:
 
 misc:
   project: inctnpa-rbf-rangesame
-  name: TNPA-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
+  name: incTNPA-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
   resume_from_checkpoint: null
   gradient_clip_val: 0.5
   plot_interval: 10
