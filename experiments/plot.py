@@ -30,6 +30,8 @@ def plot(
     name: str = "plot",
     savefig: bool = False,
     logging: bool = True,
+    title_pretext: str="",
+    model_lbl: str="Model",
     pred_fn: Callable = np_pred_fn,
 ):
     steps = int(points_per_dim * (x_range[1] - x_range[0]))
@@ -57,7 +59,7 @@ def plot(
         with torch.no_grad():
             y_plot_pred_dist = pred_fn(model, plot_batch, predict_without_yt_tnpa=True)
             yt_pred_dist = pred_fn(model, batch)
-
+        
         model_nll = -yt_pred_dist.log_prob(yt).sum() / batch.yt[..., 0].numel()
         mean, std = y_plot_pred_dist.mean, y_plot_pred_dist.stddev
 
@@ -95,10 +97,10 @@ def plot(
             mean[0, :, 0].cpu() + 2.0 * std[0, :, 0].cpu(),
             color="tab:blue",
             alpha=0.2,
-            label="Model",
+            label=model_lbl,
         )
 
-        title_str = f"$N = {xc.shape[1]}$ NLL = {model_nll:.3f}"
+        title_str = title_pretext + f"$N = {xc.shape[1]}$ NLL = {model_nll:.3f}"
 
         if isinstance(batch, SyntheticBatch) and batch.gt_pred is not None:
             with torch.no_grad():
@@ -161,7 +163,11 @@ def plot(
         if wandb.run is not None and logging:
             wandb.log({fname: wandb.Image(fig)})
         elif savefig:
-            save_name = f"{name}/{i:03d}"
+            base_folder = f"{name}"
+            save_name = base_folder + f"/{i:03d}"
+            if not os.path.isdir(base_folder):
+                os.makedirs(base_folder)
+
             #if not os.path.isdir(f"fig/{name}"):
             #    os.makedirs(f"fig/{name}")
             plt.savefig(save_name, bbox_inches="tight")

@@ -14,6 +14,8 @@ from functools import partial
 from tqdm import tqdm
 import numpy as np
 import torch.distributions as td
+from plot import plot
+import os
 
 
 @check_shapes(
@@ -104,15 +106,16 @@ UpdateCtxAndQueryTgtFuncs = Tuple[
 def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     order: Literal["random", "given", "left-to-right", "variance"] = "random",
     num_samples: int = 10,
-    inc_ctx_and_query: Optional[UpdateCtxAndQueryTgtFuncs] = None,
-    ):
+    device: str = "cuda", # Device for computing
+    device_ret: str = "cpu", # Return device
+    inc_ctx_and_query: Optional[UpdateCtxAndQueryTgtFuncs] = None,):
     m, nt, dx = xt.shape
     _, nc, dy = yc.shape
-    device = xt.device
+    xc, yc, xt = xc.to(device), yc.to(device), xt.to(device)
 
-    xc_stacked = _stack(xc, num_samples=num_samples, dim=0)
-    yc_stacked = _stack(yc, num_samples=num_samples, dim=0)
-    xt_stacked = _stack(xt, num_samples=num_samples, dim=0)
+    xc_stacked = xc.repeat_interleave(num_samples, dim=0)
+    yc_stacked = yc.repeat_interleave(num_samples, dim=0)
+    xt_stacked = xt.repeat_interleave(num_samples, dim=0)
 
     xt_stacked, _, perm = _shuffle_targets(model, xc_stacked, yc_stacked, xt_stacked, None, order) # Should I shuffle before or after stacking?
 
@@ -153,16 +156,13 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     # Permutes to [m, nt, dy, num_samples]
     yt_preds_mean = yt_preds_mean.permute(1,2,3,0)
     yt_preds_std  = yt_preds_std.permute(1,2,3,0)
-    mix  = td.Categorical(torch.full((m, nt, dy, num_samples), 1.0 / num_samples, device=device))
-    comp = td.Normal(yt_preds_mean, yt_preds_std)
+    mix  = td.Categorical(torch.full((m, nt, dy, num_samples), 1.0 / num_samples, device=device_ret))
+    comp = td.Normal(yt_preds_mean.to(device_ret), yt_preds_std.to(device_ret))
     approx_dist = td.MixtureSameFamily(mix, comp)
 
     # For sample draws return raw samples and run through model again for smooth samples (see paper / code)
     return approx_dist
 
-
-def _stack(x, num_samples, dim):
-    return torch.stack([x] * num_samples, dim=dim)
 
 
 # -------------------------------------------------------------------------------------------------------
@@ -170,20 +170,28 @@ def _stack(x, num_samples, dim):
 # Plots a handful of kernels
 def plot_ar_unrolls():
     # Hypers
-    no_kernels = 5
+    order="random"
+    no_samples = [1, 2, 5, 10, 50, 100, 500, 1000, 2000, 5000, 10000]
+    folder_name = "experiments/plot_results/ar/plots/"
+    no_kernels = 20
+    device="cuda"
     # End of hypers
     models = get_model_list()
     data = get_rbf_rangesame_testset()
     for (model_yml, model_wab, model_name) in models:
         model = get_model(model_yml, model_wab, seed=False, device=device)
         model.eval()
+        model_folder = f"{folder_name}/{model_name}"
+        if not os.path.isdir(model_folder):
+            os.makedirs(model_folder)
+        for sample in no_samples:
+            def pred_fn_pred(model, batch, predict_without_yt_tnpa=True):
+                return ar_predict(model, batch.xc, batch.yc, batch.xt, order, sample, device=device)
 
-        def pred_fn_pred(batch, predict_without_yt_tnpa=True):
-            return ar_predict(model, batch.xc, batch.yc, batch.xt)
-
-        plot(model=model, batches=data, num_fig=no_kernels, name="",
-            savefig=True, logging=False, pred_fn=pred_fn_pred)
-            
+            plot(model=model, batches=data, num_fig=min(no_kernels, len(data)), name=model_folder+f"/ns_{sample}_od_{order}",
+                savefig=True, logging=False, pred_fn=pred_fn_pred, x_range = (-2.0, 2.0),
+                model_lbl=f"AR {model_name} (S={sample}) ")
+                
 
 
 def get_rbf_rangesame_testset():
@@ -253,4 +261,5 @@ def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
 
 
 if __name__ == "__main__":
-    compare_rbf_models(base_out_txt_file="experiments/plot_results/ar/ar_rbf_comp")
+    plot_ar_unrolls()
+    #compare_rbf_models(base_out_txt_file="experiments/plot_results/ar/ar_rbf_comp")
