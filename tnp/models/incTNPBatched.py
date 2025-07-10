@@ -10,6 +10,8 @@ from ..utils.helpers import preprocess_observations
 from .base import BatchedCausalTNP
 from .tnp import TNPDecoder
 from ..utils.helpers import preprocess_observations
+from .incUpdateBase import IncUpdateEff
+from ..networks.kv_cache import init_kv_cache
 
 
 class IncTNPBatchedEncoder(nn.Module):
@@ -120,3 +122,4 @@ class IncTNPBatched(BatchedCausalTNP):
         likelihood: nn.Module,
     ):
         super().__init__(encoder, decoder, likelihood)
+

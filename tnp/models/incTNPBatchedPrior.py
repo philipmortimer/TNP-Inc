@@ -11,6 +11,8 @@ from .base import BatchedCausalTNPPrior
 from .tnp import TNPDecoder
 from ..utils.helpers import preprocess_observations
 from ..networks.kv_cache import init_kv_cache
+from .incUpdateBase import IncUpdateEff
+import torch.distributions as td
 
 
 class IncTNPBatchedEncoderPrior(nn.Module):
@@ -151,7 +153,7 @@ class IncTNPBatchedEncoderPrior(nn.Module):
 
 
 
-class IncTNPBatchedPrior(BatchedCausalTNPPrior):
+class IncTNPBatchedPrior(BatchedCausalTNPPrior, IncUpdateEff):
     def __init__(
         self,
         encoder: IncTNPBatchedEncoderPrior,
@@ -159,6 +161,24 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior):
         likelihood: nn.Module,
     ):
         super().__init__(encoder, decoder, likelihood)
+
+    # Logic for effecient incremental context updates
+    def init_inc_structs(self, m: int):
+        self.kv_cache_inc = init_kv_cache()
+        # Adds empty token
+        start_token = self.encoder.empty_token.expand(m, -1, -1)
+        self.encoder.update_context(start_token, self.kv_cache_inc)
+
+
+    # Adds new context points
+    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
+        zc = self.encoder._preprocess_context(xc, yc)
+        self.encoder.update_context(zc, self.kv_cache_inc)
+
+    def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
+        zt = self.encoder._preprocess_targets(xt, dy)
+        return self.likelihood(self.decoder(self.encoder.query(zt, self.kv_cache_inc), xt))
+
 
     # Greedy Context ordering algorithm using KV caching. Note it is incremental (so given an initial context set + a number of new ctx points it can pick the best order)
     # This approach assumes we already have all context points.

@@ -7,6 +7,7 @@ from torch import nn
 from typing import Optional, Union, Literal, Callable, Tuple
 from tnp.utils.np_functions import np_pred_fn
 from tnp.data.base import Batch
+from tnp.models.incUpdateBase import IncUpdateEff
 from plot_adversarial_perms import get_model
 from tnp.data.gp import RandomScaleGPGenerator
 from tnp.networks.gp import RBFKernel
@@ -16,6 +17,12 @@ import numpy as np
 import torch.distributions as td
 from plot import plot
 import os
+import matplotlib.pyplot as plt
+import matplotlib
+
+matplotlib.rcParams["mathtext.fontset"] = "stix"
+matplotlib.rcParams["font.family"] = "STIXGeneral"
+matplotlib.rcParams["axes.titlesize"]= 14
 
 
 @check_shapes(
@@ -92,13 +99,6 @@ def ar_loglik(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch
     return log_probs
 
 
-UpdateCtxAndQueryTgtFuncs = Tuple[
-    Callable[[int], None], # Initialise function
-    Callable[[torch.Tensor, torch.Tensor], None],  # inc_ctxt_update
-    Callable[[torch.Tensor], td.Distribution]     # query_tgt
-]
-
-
 @check_shapes(
     "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]"
 )
@@ -108,7 +108,7 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     num_samples: int = 10,
     device: str = "cuda", # Device for computing
     device_ret: str = "cpu", # Return device
-    inc_ctx_and_query: Optional[UpdateCtxAndQueryTgtFuncs] = None,):
+    ):
     m, nt, dx = xt.shape
     _, nc, dy = yc.shape
     xc, yc, xt = xc.to(device), yc.to(device), xt.to(device)
@@ -121,18 +121,18 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
 
     yt_preds_mean, yt_preds_std = torch.empty((m * num_samples, nt, dy), device=device), torch.empty((m * num_samples, nt, dy), device=device)
 
-    if inc_ctx_and_query is not None:
-        init_func, inc_update, query = inc_ctx_and_query
-        init_func(nc + nt)
-        inc_update(xc_stacked, yc_stacked)
+    is_inc_update = isinstance(model, IncUpdateEff)
+    if is_inc_update:
+        model.init_inc_structs(m=xc_stacked.shape[0])
+        model.update_ctx(xc=xc_stacked, yc=yc_stacked)
 
     for i in range(nt):
         xt_tmp = xt_stacked[:, i:i+1,:]
-        if inc_ctx_and_query is None:
+        if is_inc_update:
+            pred_dist = model.query(xt=xt_tmp, dy=dy)
+        else:
             batch = Batch(xc=xc_stacked, yc=yc_stacked, xt=xt_tmp, yt=None, x=None, y=None)
             pred_dist = np_pred_fn(model, batch)
-        else:
-            pred_dist = query(xt_tmp)
         assert isinstance(pred_dist, td.Normal), "Must predict a gaussian"
         pred_mean, pred_std = pred_dist.mean, pred_dist.stddev
         yt_preds_mean[:,i:i+1,:] = pred_mean
@@ -140,11 +140,12 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
         # Samples from the predictive distribution and updates the context
         if i < nt - 1:
             yt_sampled = pred_dist.sample() # [m * num_samples, 1, dy]
-            if inc_ctx_and_query is None:
+            if is_inc_update:
+                model.update_ctx(xc=xt_tmp, yc=yt_sampled)
+            else:
                 xc_stacked = torch.cat((xc_stacked, xt_tmp), dim=1)
                 yc_stacked = torch.cat((yc_stacked, yt_sampled), dim=1)
-            else:
-                inc_update(xt_tmp, yt_sampled)
+                
     # Unshuffles the target ordering to be in line with what was passed in
     inv_perm = perm.argsort(dim=1)
     idx = inv_perm.unsqueeze(-1).expand(-1, -1, dy)
@@ -167,11 +168,88 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
 
 # -------------------------------------------------------------------------------------------------------
 
+# Measures timings of different models
+def measure_perf_timings():
+    # Measure hypers
+    burn_in = 1 # Number of burn in runs to ignore
+    aggregate_over = 1 # Number of runs to aggregate data over
+    token_step = 1_000 # How many increments of tokens to go up in
+    min_nt, max_nt = 1000, 5_001
+    dx, dy, m = 1, 1, 1
+    nc_start = 1
+    num_samples=5 # Samples to unroll in ar_predict
+    device = "cuda"
+    order="random"
+    plot_name_folder = "experiments/plot_results/ar/perf/"
+    # End of measure hypers
+    models = get_model_list()
+    max_high = 2
+    xc = (torch.rand((m, nc_start, dx), device=device) * max_high * 2) - max_high
+    yc = (torch.rand((m, nc_start, dy), device=device) * max_high * 2) - max_high
+    target_sizes = np.arange(start=min_nt, stop=max_nt, step=token_step, dtype=int)
+    runtime = np.zeros((len(models), aggregate_over, len(target_sizes)))
+    memory = np.zeros((len(models), aggregate_over, len(target_sizes)))
+    starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
+        model = get_model(model_yml, model_wab, seed=False, device=device)
+        model.eval() 
+        for t_index, nt in enumerate(target_sizes):
+            xt = (torch.rand((m, nt, dx), device=device) * max_high * 2) - max_high
+            yt = (torch.rand((m, nt, dy), device=device) * max_high * 2) - max_high
+
+            for j in range(burn_in + aggregate_over):
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.synchronize()
+                starter.record()
+                with torch.no_grad():
+                    pred_dist = ar_predict(model=model, xc=xc, yc=yc, xt=xt, order=order, num_samples=num_samples,
+                        device=device, device_ret=device)
+                # Measures time and memory
+                ender.record()
+                torch.cuda.synchronize()
+                peak_memory_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+                runtime_ms = starter.elapsed_time(ender)
+                # Stores results
+                write_idx = j - burn_in
+                if write_idx >= 0:
+                    runtime[model_idx, write_idx, t_index] = runtime_ms
+                    memory[model_idx, write_idx, t_index] = peak_memory_mb
+    # Aggregates results
+    runtime = np.mean(runtime, axis=1) # [no_models, len(target_sizes)]
+    memory = np.mean(memory, axis=1)
+    # Plots runtime
+    runtime_file_name = plot_name_folder + f'runtime_od_{order}_samples_{num_samples}.png'
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
+        ax.plot(target_sizes, runtime[model_idx], label=model_name)
+    ax.set_xlabel('Target Size')
+    ax.set_ylabel('Runtime (ms)')
+    ax.legend()
+    ax.set_title(f'Runtime of AR NPs (S={num_samples})')
+    ax.grid(True, linestyle='--', alpha=0.4)
+    fig.tight_layout()
+    plt.savefig(runtime_file_name, dpi=300)
+    # Plots memory
+    memory_file_name = plot_name_folder + f'memory_od_{order}_samples_{num_samples}.png'
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
+        ax.plot(target_sizes, memory[model_idx], label=model_name)
+    ax.set_xlabel('Target Size')
+    ax.set_ylabel('Memory Usage (MB)')
+    ax.legend()
+    ax.set_title(f'Memory Usage of AR NPs (S={num_samples})')
+    ax.grid(True, linestyle='--', alpha=0.4)
+    fig.tight_layout()
+    plt.savefig(memory_file_name, dpi=300)
+
+
+
 # Plots a handful of kernels
 def plot_ar_unrolls():
     # Hypers
     order="random"
-    no_samples = [1, 2, 5, 10, 50, 100, 500, 1000, 2000, 5000, 10000]
+    no_samples = [1, 2, 5, 10, 50, 100, 500, 1000]
+    no_samples = [10, 50]
     folder_name = "experiments/plot_results/ar/plots/"
     no_kernels = 20
     device="cuda"
@@ -261,5 +339,6 @@ def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
 
 
 if __name__ == "__main__":
+    #measure_perf_timings()
     plot_ar_unrolls()
     #compare_rbf_models(base_out_txt_file="experiments/plot_results/ar/ar_rbf_comp")
