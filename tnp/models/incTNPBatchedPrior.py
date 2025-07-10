@@ -12,7 +12,7 @@ from .tnp import TNPDecoder
 from ..utils.helpers import preprocess_observations
 from ..networks.kv_cache import init_kv_cache
 from ..networks.kv_cache_fixed import init_kv_cache_fixed
-from .incUpdateBase import IncUpdateEff
+from .incUpdateBase import IncUpdateEff, IncUpdateEffFixed
 import torch.distributions as td
 
 
@@ -154,7 +154,7 @@ class IncTNPBatchedEncoderPrior(nn.Module):
 
 
 
-class IncTNPBatchedPrior(BatchedCausalTNPPrior, IncUpdateEff):
+class IncTNPBatchedPrior(BatchedCausalTNPPrior, IncUpdateEff, IncUpdateEffFixed):
     def __init__(
         self,
         encoder: IncTNPBatchedEncoderPrior,
@@ -165,7 +165,7 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior, IncUpdateEff):
 
 
     # Logic for effecient incremental context updates
-    def init_inc_structs_fixed(self, m: int, max_nc: int, device: str):
+    def init_inc_structs_fixed(self, m: int, max_nc: int, xc: torch.Tensor, yc: torch.Tensor, xt:torch.Tensor, device: str):
     #    # Adds empty token
         start_token = self.encoder.empty_token.expand(m, -1, -1)
         dz = start_token.shape[2]
@@ -176,6 +176,7 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior, IncUpdateEff):
         self.kv_cache_inc = init_kv_cache_fixed(layers=layers, batch_size=m, max_nc=max_nc+1, dz=dz, 
             heads=heads, k_dim=head_dim, v_dim=head_dim, device=device)
         self.encoder.transformer_encoder.encode_context_fixedkv(start_token, self.kv_cache_inc)
+
 
 
     # Adds new context points

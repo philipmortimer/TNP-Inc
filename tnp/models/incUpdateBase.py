@@ -3,9 +3,7 @@ from abc import ABC, abstractmethod
 import torch
 import torch.distributions as td
 
-# This is the class for effecient incremental updates. It requires specification of knowledge of various known maximums.
-# Incremental updating has been implemented for any size context, but this effecient version is just to make it even faster 
-# for certain cases. Big O still the same and generic version tested. This is used for stuff like AR mode to make gains on small ctx
+# General inc updates
 class IncUpdateEff(ABC):
     @abstractmethod
     def init_inc_structs(self, m: int, max_nc: int, device: str):
@@ -19,6 +17,10 @@ class IncUpdateEff(ABC):
     def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
         raise NotImplementedError
 
+
+# This is the class for effecient incremental updates. It requires specification of knowledge of various known maximums.
+# Incremental updating has been implemented for any size context, but this effecient version is just to make it even faster 
+# for certain cases. Big O still the same and generic version tested. This is used for stuff like AR mode to make gains on small ctx
 class IncUpdateEffFixed(ABC):
     @abstractmethod
     def init_inc_structs_fixed(self, m: int, max_nc: int, device: str):

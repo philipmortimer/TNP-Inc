@@ -7,7 +7,7 @@ from torch import nn
 from typing import Optional, Union, Literal, Callable, Tuple
 from tnp.utils.np_functions import np_pred_fn
 from tnp.data.base import Batch
-from tnp.models.incUpdateBase import IncUpdateEff
+from tnp.models.incUpdateBase import IncUpdateEff, IncUpdateEffFixed
 from plot_adversarial_perms import get_model
 from tnp.data.gp import RandomScaleGPGenerator
 from tnp.networks.gp import RBFKernel
@@ -106,6 +106,7 @@ def ar_loglik(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch
 def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     order: Literal["random", "given", "left-to-right", "variance"] = "random",
     num_samples: int = 10,
+    prioritise_fixed: bool = False, # If incremental updates are available prioritise fixed or true dynamic algorithm
     device: str = "cuda", # Device for computing
     device_ret: str = "cpu", # Return device
     ):
@@ -121,15 +122,24 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
 
     yt_preds_mean, yt_preds_std = torch.empty((m * num_samples, nt, dy), device=device), torch.empty((m * num_samples, nt, dy), device=device)
 
-    is_inc_update = isinstance(model, IncUpdateEff)
-    if is_inc_update:
+    is_fixed_inc_update = isinstance(model, IncUpdateEffFixed)
+    is_inc_gen_update = isinstance(model, IncUpdateEff)
+    is_fixed_inc_update = (is_fixed_inc_update and prioritise_fixed) or (is_fixed_inc_update and not is_inc_gen_update)
+    is_inc_gen_update = (is_inc_gen_update and  not prioritise_fixed) or (is_inc_gen_update and not is_fixed_inc_update)
+    assert is_fixed_inc_update != is_inc_gen_update or (not is_fixed_inc_update and not is_inc_gen_update), "Xor onf fixed vs inc update"
+    if is_inc_gen_update:
         model.init_inc_structs(m=xc_stacked.shape[0], max_nc=nc+nt, device=device)
         model.update_ctx(xc=xc_stacked, yc=yc_stacked)
+    elif is_fixed_inc_update:
+        model.init_inc_structs_fixed(m=xc_stacked.shape[0], max_nc=nc+nt, device=device)
+        model.update_ctx_fixed(xc=xc_stacked, yc=yc_stacked)
 
     for i in range(nt):
         xt_tmp = xt_stacked[:, i:i+1,:]
-        if is_inc_update:
+        if is_inc_gen_update:
             pred_dist = model.query(xt=xt_tmp, dy=dy)
+        elif is_fixed_inc_update:
+            pred_dist = model.query_fixed(xt=xt_tmp, dy=dy)
         else:
             batch = Batch(xc=xc_stacked, yc=yc_stacked, xt=xt_tmp, yt=None, x=None, y=None)
             pred_dist = np_pred_fn(model, batch)
@@ -140,8 +150,10 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
         # Samples from the predictive distribution and updates the context
         if i < nt - 1:
             yt_sampled = pred_dist.sample() # [m * num_samples, 1, dy]
-            if is_inc_update:
+            if is_inc_gen_update:
                 model.update_ctx(xc=xt_tmp, yc=yt_sampled)
+            elif is_fixed_inc_update:
+                model.update_ctx_fixed(xc=xt_tmp, yc=yt_sampled)
             else:
                 xc_stacked = torch.cat((xc_stacked, xt_tmp), dim=1)
                 yc_stacked = torch.cat((yc_stacked, yt_sampled), dim=1)
@@ -173,13 +185,14 @@ def measure_perf_timings():
     # Measure hypers
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 1 # Number of runs to aggregate data over
-    token_step = 50 # How many increments of tokens to go up in
-    min_nt, max_nt = 1, 1002
+    token_step = 1_000 # How many increments of tokens to go up in
+    min_nt, max_nt = 1_000, 10_002
     dx, dy, m = 1, 1, 1
     nc_start = 1
     num_samples=50 # Samples to unroll in ar_predict
     device = "cuda"
     order="random"
+    prioritise_fixed = True
     plot_name_folder = "experiments/plot_results/ar/perf/"
     # End of measure hypers
     models = get_model_list()
@@ -203,7 +216,7 @@ def measure_perf_timings():
                 starter.record()
                 with torch.no_grad():
                     pred_dist = ar_predict(model=model, xc=xc, yc=yc, xt=xt, order=order, num_samples=num_samples,
-                        device=device, device_ret=device)
+                        device=device, device_ret=device, prioritise_fixed=prioritise_fixed)
                 # Measures time and memory
                 ender.record()
                 torch.cuda.synchronize()
@@ -309,7 +322,8 @@ def get_model_list():
         'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP')
     conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
         'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
-    models = [conv_cnp, tnp_plain, incTNP, batchedTNP, priorBatched, cnp]
+    models = [tnp_plain, incTNP, batchedTNP, priorBatched, conv_cnp, cnp]
+    models = [priorBatched, tnp_plain, batchedTNP, conv_cnp, cnp]
     return models
 
 # Compares NP models in AR mode on RBF set
