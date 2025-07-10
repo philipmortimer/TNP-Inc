@@ -8,7 +8,7 @@ import torch.distributions as td
 # for certain cases. Big O still the same and generic version tested. This is used for stuff like AR mode to make gains on small ctx
 class IncUpdateEff(ABC):
     @abstractmethod
-    def init_inc_structs(self, m: int):
+    def init_inc_structs(self, m: int, max_nc: int, device: str):
         raise NotImplementedError
     
     @abstractmethod

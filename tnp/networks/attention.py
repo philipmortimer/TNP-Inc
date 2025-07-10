@@ -6,6 +6,7 @@ import torch
 from check_shapes import check_shapes
 from torch import nn
 from .kv_cache import update_kv_cache
+from .kv_cache_fixed import update_kv_cache_fixed, get_mask_fixed
 
 
 class BaseMultiHeadAttention(nn.Module, ABC):
@@ -54,7 +55,8 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         mask: Optional[torch.Tensor] = None,
         kv_cache: Optional[dict] = None, # Stores cached KV values if being used
         kv_tag: Optional[str] = None, # Layer ID to look up in kv_cache,
-        use_causal: bool = False, # Whether to set causal flag in SDPA
+        use_causal: bool = False, # Whether to set causal flag in SDPA,
+        use_fixed_kv: bool = False, # Whether to use more optimised fixed kv cache or not - less safe but potentially faster
     ) -> torch.Tensor:
         q = self.to_q(xq)
         k_new = self.to_k(xk)
@@ -68,14 +70,22 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         if kv_tag is None: # KV caching not used if no tag provided
             k, v = k_new, v_new
         else:
-            k, v = update_kv_cache(k_new, v_new, kv_cache, kv_tag)
-            # Loads cached mask in case of KV caching - https://github.com/pytorch/pytorch/issues/144858
-            if kv_cache is not None and  kv_tag is not None:
-                m, _, k_len, _ = k.shape
-                _, _, q_len, _ = q.shape
-                mask = torch.tril(torch.ones(k_len, k_len, dtype=torch.bool, device=k.device))[-q_len:]
-                #mask = mask.unsqueeze(0).expand(m, -1, -1).contiguous()
-                use_causal = False
+            if use_fixed_kv:
+                k, v = update_kv_cache_fixed(k_new, v_new, kv_cache, kv_tag)
+                if kv_cache is not None and kv_tag is not None:
+                    m, _, k_len, _ = k.shape
+                    _, _, q_len, _ = q.shape
+                    mask = get_mask_fixed(kv_cache, q_len, k_len)
+                    use_causal = False
+            else:
+                k, v = update_kv_cache(k_new, v_new, kv_cache, kv_tag)
+                # Loads cached mask in case of KV caching - https://github.com/pytorch/pytorch/issues/144858
+                if kv_cache is not None and  kv_tag is not None:
+                    m, _, k_len, _ = k.shape
+                    _, _, q_len, _ = q.shape
+                    mask = torch.tril(torch.ones(k_len, k_len, dtype=torch.bool, device=k.device))[-q_len:]
+                    #mask = mask.unsqueeze(0).expand(m, -1, -1).contiguous()
+                    use_causal = False
             
 
         #if mask is not None:
@@ -131,8 +141,9 @@ class MultiHeadSelfAttention(BaseMultiHeadAttention):
         kv_cache: Optional[dict] = None,
         kv_tag: Optional[str] = None,
         use_causal: bool = False, # Whether to set causal flag in SDPA
+        use_fixed_kv: bool = False, # Whether to use more optimised fixed kv cache or not - less safe but potentially faster
     ) -> torch.Tensor:
-        return super().propagate(x, x, x, mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal)
+        return super().propagate(x, x, x, mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal, use_fixed_kv=use_fixed_kv)
 
 
 class MultiHeadCrossAttention(BaseMultiHeadAttention):

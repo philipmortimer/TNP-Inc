@@ -11,6 +11,7 @@ from .base import BatchedCausalTNPPrior
 from .tnp import TNPDecoder
 from ..utils.helpers import preprocess_observations
 from ..networks.kv_cache import init_kv_cache
+from ..networks.kv_cache_fixed import init_kv_cache_fixed
 from .incUpdateBase import IncUpdateEff
 import torch.distributions as td
 
@@ -162,22 +163,29 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior, IncUpdateEff):
     ):
         super().__init__(encoder, decoder, likelihood)
 
+
     # Logic for effecient incremental context updates
-    def init_inc_structs(self, m: int):
-        self.kv_cache_inc = init_kv_cache()
+    def init_inc_structs(self, m: int, max_nc: int, device: str):
         # Adds empty token
         start_token = self.encoder.empty_token.expand(m, -1, -1)
-        self.encoder.update_context(start_token, self.kv_cache_inc)
+        dz = start_token.shape[2]
+        layers = len(self.encoder.transformer_encoder.mhsa_layers)
+        heads = self.encoder.transformer_encoder.mhsa_layers[0].attn.num_heads
+        head_dim = int(round(self.encoder.transformer_encoder.mhsa_layers[0].attn.scale ** -2))
+        #kv_dim = self.encoder.transformer_encoder.mhsa_layers[0].qk_dim
+        self.kv_cache_inc = init_kv_cache_fixed(layers=layers, batch_size=m, max_nc=max_nc+1, dz=dz, 
+            heads=heads, k_dim=head_dim, v_dim=head_dim, device=device)
+        self.encoder.transformer_encoder.encode_context_fixedkv(start_token, self.kv_cache_inc)
 
 
     # Adds new context points
     def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
         zc = self.encoder._preprocess_context(xc, yc)
-        self.encoder.update_context(zc, self.kv_cache_inc)
+        self.encoder.transformer_encoder.encode_context_fixedkv(zc, self.kv_cache_inc)
 
     def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
         zt = self.encoder._preprocess_targets(xt, dy)
-        return self.likelihood(self.decoder(self.encoder.query(zt, self.kv_cache_inc), xt))
+        return self.likelihood(self.decoder(self.encoder.transformer_encoder.query_fixedkv(zt, self.kv_cache_inc), xt))
 
 
     # Greedy Context ordering algorithm using KV caching. Note it is incremental (so given an initial context set + a number of new ctx points it can pick the best order)

@@ -8,6 +8,7 @@ import torch
 from check_shapes import check_shapes
 from torch import nn
 from .kv_cache import update_ctx_cache
+from .kv_cache_fixed import get_layer_ctx, update_ctx_cache_fixed, get_layer_id
 
 from .attention_layers import (
     MultiHeadCrossAttentionLayer,
@@ -103,6 +104,28 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
             xt = mhca_layer(xt, xc, mask=mask_ca)
 
         return xt
+
+    # Fixed KV (more opt) - Computes the MHSA representation with causal plus kv
+    @check_shapes(
+        "zc_new: [m, nc_new, dz]"
+    )
+    def encode_context_fixedkv(self, zc_new: torch.Tensor, kv_cache: dict) -> torch.Tensor:
+        L = len(self.mhsa_layers)
+        m, nc_new, dz = zc_new.shape
+        ctx_vals = torch.empty((L, m, nc_new, dz), device=zc_new.device)
+        for i, mhsa_layer in enumerate(self.mhsa_layers):
+            self_attention_layer_tag = get_layer_id(i)
+            zc_new = mhsa_layer(zc_new, kv_cache=kv_cache, kv_tag=self_attention_layer_tag, use_fixed_kv=True)
+            update_ctx_cache_fixed(zc_new, kv_cache, i) # Writes updated context
+
+    # Fixed KV - Query - runs MHCA pathway assuming MHSA attention has already been computed
+    @check_shapes(
+        "zt: [m, nt, dz]", "return: [m, nt, dz]"
+    )
+    def query_fixedkv(self, zt, kv_cache: dict) -> torch.Tensor:
+        for i, mhca_layer in enumerate(self.mhca_layers):
+            zt = mhca_layer(zt, get_layer_ctx(i, kv_cache))
+        return zt
 
     # Computes the MHSA representation with causal plus kv
     @check_shapes(
