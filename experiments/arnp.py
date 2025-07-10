@@ -173,11 +173,11 @@ def measure_perf_timings():
     # Measure hypers
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 1 # Number of runs to aggregate data over
-    token_step = 1_000 # How many increments of tokens to go up in
-    min_nt, max_nt = 1000, 5_001
+    token_step = 100 # How many increments of tokens to go up in
+    min_nt, max_nt = 1, 250
     dx, dy, m = 1, 1, 1
     nc_start = 1
-    num_samples=5 # Samples to unroll in ar_predict
+    num_samples=50 # Samples to unroll in ar_predict
     device = "cuda"
     order="random"
     plot_name_folder = "experiments/plot_results/ar/perf/"
@@ -248,10 +248,10 @@ def measure_perf_timings():
 def plot_ar_unrolls():
     # Hypers
     order="random"
-    no_samples = [1, 2, 5, 10, 50, 100, 500, 1000]
+    #no_samples = [1, 2, 5, 10, 50, 100, 500, 1000]
     no_samples = [10, 50]
     folder_name = "experiments/plot_results/ar/plots/"
-    no_kernels = 20
+    no_kernels = 5#20
     device="cuda"
     # End of hypers
     models = get_model_list()
@@ -310,6 +310,7 @@ def get_model_list():
     conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
         'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
     models = [tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
+    models = [batchedTNP, priorBatched]
     return models
 
 # Compares NP models in AR mode on RBF set
@@ -339,6 +340,6 @@ def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
 
 
 if __name__ == "__main__":
-    #measure_perf_timings()
-    plot_ar_unrolls()
+    measure_perf_timings()
+    #plot_ar_unrolls()
     #compare_rbf_models(base_out_txt_file="experiments/plot_results/ar/ar_rbf_comp")
