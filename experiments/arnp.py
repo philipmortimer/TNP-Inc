@@ -171,10 +171,10 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
 # Measures timings of different models
 def measure_perf_timings():
     # Measure hypers
-    burn_in = 1 # Number of burn in runs to ignore
+    burn_in = 0 # Number of burn in runs to ignore
     aggregate_over = 1 # Number of runs to aggregate data over
-    token_step = 25 # How many increments of tokens to go up in
-    min_nt, max_nt = 1, 203
+    token_step = 250 # How many increments of tokens to go up in
+    min_nt, max_nt = 1, 502
     dx, dy, m = 1, 1, 1
     nc_start = 1
     num_samples=50 # Samples to unroll in ar_predict
@@ -193,7 +193,7 @@ def measure_perf_timings():
     for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
         model = get_model(model_yml, model_wab, seed=False, device=device)
         model.eval() 
-        for t_index, nt in enumerate(target_sizes):
+        for t_index, nt in tqdm(enumerate(target_sizes), desc=f'Targ {model_name}'):
             xt = (torch.rand((m, nt, dx), device=device) * max_high * 2) - max_high
             yt = (torch.rand((m, nt, dy), device=device) * max_high * 2) - max_high
 
@@ -310,7 +310,7 @@ def get_model_list():
     conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
         'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
     models = [tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
-    models = [batchedTNP, priorBatched]
+    models = [incTNP, batchedTNP, tnp_plain, priorBatched]
     return models
 
 # Compares NP models in AR mode on RBF set

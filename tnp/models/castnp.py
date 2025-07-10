@@ -4,24 +4,27 @@ import torch
 from check_shapes import check_shapes
 from torch import nn
 
-from ..networks.transformer import ISTEncoder, PerceiverEncoder, TNPTransformerMaskedEncoder
+from ..networks.transformer import ISTEncoder, PerceiverEncoder, TNPTransformerMaskedEncoder, TNPTransformerFullyMaskedEncoder, convert_transformer_encoder
 from ..utils.helpers import preprocess_observations
 from .base import ConditionalNeuralProcess
 from .tnp import TNPDecoder
 import warnings
+from .incUpdateBase import IncUpdateEff
+from ..networks.kv_cache import init_kv_cache
+import torch.distributions as td
 
 # TNP using causal attention mask - breaking context permutation invariance
 class TNPEncoderMasked(nn.Module):
     def __init__(
         self,
-        transformer_encoder: Union[TNPTransformerMaskedEncoder, PerceiverEncoder, ISTEncoder],
+        transformer_encoder: Union[TNPTransformerMaskedEncoder],# This is now converted to TNPTransformerFullyMaskedEncoder in code
         xy_encoder: nn.Module,
         x_encoder: nn.Module = nn.Identity(),
         y_encoder: nn.Module = nn.Identity(),
     ):
         super().__init__()
 
-        self.transformer_encoder = transformer_encoder
+        self.transformer_encoder = convert_transformer_encoder(transformer_encoder) # Type TNPTransformerFullyMaskedEncoder
         self.xy_encoder = xy_encoder
         self.x_encoder = x_encoder
         self.y_encoder = y_encoder
@@ -35,20 +38,9 @@ class TNPEncoderMasked(nn.Module):
     def forward(
         self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor
     ) -> torch.Tensor:
-        yc, yt = preprocess_observations(xt, yc)
-
-        x = torch.cat((xc, xt), dim=1)
-        x_encoded = self.x_encoder(x)
-        xc_encoded, xt_encoded = x_encoded.split((xc.shape[1], xt.shape[1]), dim=1)
-
-        y = torch.cat((yc, yt), dim=1)
-        y_encoded = self.y_encoder(y)
-        yc_encoded, yt_encoded = y_encoded.split((yc.shape[1], yt.shape[1]), dim=1)
-
-        zc = torch.cat((xc_encoded, yc_encoded), dim=-1)
-        zt = torch.cat((xt_encoded, yt_encoded), dim=-1)
-        zc = self.xy_encoder(zc)
-        zt = self.xy_encoder(zt)
+        m, nc, _ = xc.shape
+        zc = self._preprocess_context(xc, yc)
+        zt = self._preprocess_targets(xt, yc.shape[2])
 
         # Causal masked attention for context - using mask=None will get same behaviour as non masked
         #m, nc, _ = xc.shape # Number of context points
@@ -58,7 +50,32 @@ class TNPEncoderMasked(nn.Module):
         return zt
 
 
-class TNPCausal(ConditionalNeuralProcess):
+    @check_shapes(
+        "xt: [m, nt, dx]", "return: [m, nt, dz]"
+    )
+    def _preprocess_targets(self, xt: torch.Tensor, dy: int):
+        m, nt, _ = xt.shape
+        # Creates yt of zeros plus a bool flag
+        yt = torch.zeros(m, nt, dy).to(xt)
+        yt = torch.cat((yt, torch.ones(yt.shape[:-1] + (1,)).to(yt)), dim=-1)
+        # Encodes
+        xt_encoded = self.x_encoder(xt)
+        yt_encoded = self.y_encoder(yt)
+        zt = torch.cat((xt_encoded, yt_encoded), dim=-1)
+        return self.xy_encoder(zt)   
+
+    @check_shapes(
+        "xc: [m, nc, dx]", "yc: [m, nc, dy]", "return: [m, nc, dz]"
+    )
+    def _preprocess_context(self, xc: torch.Tensor, yc:torch.Tensor):
+        yc = torch.cat((yc, torch.zeros(yc.shape[:-1] + (1,)).to(yc)), dim=-1) # Adds flag
+        xc_encoded = self.x_encoder(xc)
+        yc_encoded = self.y_encoder(yc)
+        zc = torch.cat((xc_encoded, yc_encoded), dim=-1)
+        return self.xy_encoder(zc) 
+
+
+class TNPCausal(ConditionalNeuralProcess, IncUpdateEff):
     def __init__(
         self,
         encoder: TNPEncoderMasked,
@@ -66,3 +83,17 @@ class TNPCausal(ConditionalNeuralProcess):
         likelihood: nn.Module,
     ):
         super().__init__(encoder, decoder, likelihood)
+
+    # Logic for effecient incremental context updates
+    def init_inc_structs(self, m: int, max_nc: int, device: str):
+        self.kv_cache_inc = init_kv_cache()
+
+
+    # Adds new context points
+    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
+        zc = self.encoder._preprocess_context(xc, yc)
+        self.encoder.transformer_encoder.encode_context(zc, self.kv_cache_inc)
+
+    def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
+        zt = self.encoder._preprocess_targets(xt, dy)
+        return self.likelihood(self.decoder(self.encoder.transformer_encoder.query(zt, self.kv_cache_inc), xt))

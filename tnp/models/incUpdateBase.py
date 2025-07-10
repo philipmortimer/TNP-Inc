@@ -19,3 +19,16 @@ class IncUpdateEff(ABC):
     def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
         raise NotImplementedError
 
+class IncUpdateEffFixed(ABC):
+    @abstractmethod
+    def init_inc_structs_fixed(self, m: int, max_nc: int, device: str):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def update_ctx_fixed(self, xc: torch.Tensor, yc: torch.Tensor):
+        raise NotImplementedError
+
+    @abstractmethod
+    def query_fixed(self, xt: torch.Tensor, dy: int) -> td.Normal:
+        raise NotImplementedError
+

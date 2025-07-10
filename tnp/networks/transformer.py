@@ -74,6 +74,7 @@ class TNPTransformerEncoder(nn.Module):
 
         return xt
 
+
 # Tnp Encoder that supports masked self attention and cross attention.
 class TNPTransformerFullyMaskedEncoder(nn.Module):
     def __init__(
@@ -131,7 +132,7 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
     @check_shapes(
         "zc_new: [m, nc_new, dz]"
     )
-    def encode_context(self, zc_new: torch.Tensor, kv_cache: dict) -> torch.Tensor:
+    def encode_context(self, zc_new: torch.Tensor, kv_cache: dict):
         L = len(self.mhsa_layers)
         m, nc_new, dz = zc_new.shape
         ctx_vals = torch.empty((L, m, nc_new, dz), device=zc_new.device)
@@ -182,6 +183,19 @@ class TNPTransformerMaskedEncoder(nn.Module):
             xt = mhca_layer(xt, xc)
 
         return xt
+
+
+# Takes a TNPTransformerMaskedEncoder and converts it to TNPTransformerFullyMaskedEncoder or raises an error
+# Takes the current transformer encodeer and converts into a different type that all the other models do.
+# This is a legacy change to make code work. In future, simply accept and train with a TNPTransformerFullyMaskedEncoder
+# by default. This is done to allow already trained models to leverage the TNPTransformerFullyMaskedEncoder features for KV.
+def convert_transformer_encoder(curr_encoder: TNPTransformerMaskedEncoder) -> TNPTransformerFullyMaskedEncoder:
+    num_layers = len(curr_encoder.mhca_layers)
+    assert len(curr_encoder.mhca_layers) > 0 and len(curr_encoder.mhca_layers) > 0, "Invalid layer numbers to convert"
+    # Checks that the provided layers are actually mhsa layers
+    for lay in curr_encoder.mhsa_layers: assert isinstance(lay, MultiHeadSelfAttentionLayer), "Cant convert without true MHSA layers"
+    return TNPTransformerFullyMaskedEncoder(num_layers=num_layers, mhca_layer=curr_encoder.mhca_layers[0], 
+        mhsa_layer=curr_encoder.mhsa_layers[0])
 
 
 class TNPKRTransformerEncoder(nn.Module):

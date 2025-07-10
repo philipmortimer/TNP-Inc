@@ -12,6 +12,7 @@ from .tnp import TNPDecoder
 from ..utils.helpers import preprocess_observations
 from .incUpdateBase import IncUpdateEff
 from ..networks.kv_cache import init_kv_cache
+import torch.distributions as td
 
 
 class IncTNPBatchedEncoder(nn.Module):
@@ -51,27 +52,36 @@ class IncTNPBatchedEncoder(nn.Module):
         # At prediction time we essentially become identically to incTNP basic
         # (I.e.) just self attention over the context points and no cross attention mask.
         m, nc, _ = xc.shape
-        yc, yt = preprocess_observations(xt, yc)
-
-        x = torch.cat((xc, xt), dim=1)
-        x_encoded = self.x_encoder(x)
-        xc_encoded, xt_encoded = x_encoded.split((xc.shape[1], xt.shape[1]), dim=1)
-
-        y = torch.cat((yc, yt), dim=1)
-        y_encoded = self.y_encoder(y)
-        yc_encoded, yt_encoded = y_encoded.split((yc.shape[1], yt.shape[1]), dim=1)
-
-        zc = torch.cat((xc_encoded, yc_encoded), dim=-1)
-        zt = torch.cat((xt_encoded, yt_encoded), dim=-1)
-        zc = self.xy_encoder(zc)
-        zt = self.xy_encoder(zt)
-
-        #mask_sa = torch.tril(torch.ones(nc, nc, dtype=torch.bool, device=zc.device), diagonal=0)
-        #mask_sa = mask_sa.unsqueeze(0).expand(m, -1, -1) # [m, n, n]
+        zc = self._preprocess_context(xc, yc)
+        zt = self._preprocess_targets(xt, yc.shape[2])
 
         zt = self.transformer_encoder(zc, zt, mask_sa=None, use_causal=True, mask_ca=None)
         
-        return zt       
+        return zt   
+
+    @check_shapes(
+        "xt: [m, nt, dx]", "return: [m, nt, dz]"
+    )
+    def _preprocess_targets(self, xt: torch.Tensor, dy: int):
+        m, nt, _ = xt.shape
+        # Creates yt of zeros plus a bool flag
+        yt = torch.zeros(m, nt, dy).to(xt)
+        yt = torch.cat((yt, torch.ones(yt.shape[:-1] + (1,)).to(yt)), dim=-1)
+        # Encodes
+        xt_encoded = self.x_encoder(xt)
+        yt_encoded = self.y_encoder(yt)
+        zt = torch.cat((xt_encoded, yt_encoded), dim=-1)
+        return self.xy_encoder(zt)   
+
+    @check_shapes(
+        "xc: [m, nc, dx]", "yc: [m, nc, dy]", "return: [m, nc, dz]"
+    )
+    def _preprocess_context(self, xc: torch.Tensor, yc:torch.Tensor):
+        yc = torch.cat((yc, torch.zeros(yc.shape[:-1] + (1,)).to(yc)), dim=-1) # Adds flag
+        xc_encoded = self.x_encoder(xc)
+        yc_encoded = self.y_encoder(yc)
+        zc = torch.cat((xc_encoded, yc_encoded), dim=-1)
+        return self.xy_encoder(zc) 
 
 
     @check_shapes(
@@ -114,7 +124,7 @@ class IncTNPBatchedEncoder(nn.Module):
 
 
 
-class IncTNPBatched(BatchedCausalTNP):
+class IncTNPBatched(BatchedCausalTNP, IncUpdateEff):
     def __init__(
         self,
         encoder: IncTNPBatchedEncoder,
@@ -122,4 +132,18 @@ class IncTNPBatched(BatchedCausalTNP):
         likelihood: nn.Module,
     ):
         super().__init__(encoder, decoder, likelihood)
+
+    # Logic for effecient incremental context updates
+    def init_inc_structs(self, m: int, max_nc: int, device: str):
+        self.kv_cache_inc = init_kv_cache()
+
+
+    # Adds new context points
+    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
+        zc = self.encoder._preprocess_context(xc, yc)
+        self.encoder.transformer_encoder.encode_context(zc, self.kv_cache_inc)
+
+    def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
+        zt = self.encoder._preprocess_targets(xt, dy)
+        return self.likelihood(self.decoder(self.encoder.transformer_encoder.query(zt, self.kv_cache_inc), xt))
 
