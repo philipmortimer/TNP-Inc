@@ -131,15 +131,14 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
         model.init_inc_structs(m=xc_stacked.shape[0], max_nc=nc+nt, device=device)
         model.update_ctx(xc=xc_stacked, yc=yc_stacked)
     elif is_fixed_inc_update:
-        model.init_inc_structs_fixed(m=xc_stacked.shape[0], max_nc=nc+nt, device=device)
-        model.update_ctx_fixed(xc=xc_stacked, yc=yc_stacked)
+        model.init_inc_structs_fixed(m=xc_stacked.shape[0], max_nc=nc+nt, xt=xt_stacked, dy=dy, device=device)
 
     for i in range(nt):
         xt_tmp = xt_stacked[:, i:i+1,:]
         if is_inc_gen_update:
             pred_dist = model.query(xt=xt_tmp, dy=dy)
         elif is_fixed_inc_update:
-            pred_dist = model.query_fixed(xt=xt_tmp, dy=dy)
+            pred_dist = model.query_fixed(tgt_start_ind=i, tgt_end_ind=i+1)
         else:
             batch = Batch(xc=xc_stacked, yc=yc_stacked, xt=xt_tmp, yt=None, x=None, y=None)
             pred_dist = np_pred_fn(model, batch)
@@ -184,15 +183,15 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
 def measure_perf_timings():
     # Measure hypers
     burn_in = 1 # Number of burn in runs to ignore
-    aggregate_over = 1 # Number of runs to aggregate data over
-    token_step = 1_000 # How many increments of tokens to go up in
-    min_nt, max_nt = 1_000, 10_002
+    aggregate_over = 2 # Number of runs to aggregate data over
+    token_step = 50 # How many increments of tokens to go up in
+    min_nt, max_nt = 1, 5001
     dx, dy, m = 1, 1, 1
     nc_start = 1
     num_samples=50 # Samples to unroll in ar_predict
     device = "cuda"
     order="random"
-    prioritise_fixed = True
+    prioritise_fixed = False
     plot_name_folder = "experiments/plot_results/ar/perf/"
     # End of measure hypers
     models = get_model_list()
@@ -231,26 +230,26 @@ def measure_perf_timings():
     runtime = np.mean(runtime, axis=1) # [no_models, len(target_sizes)]
     memory = np.mean(memory, axis=1)
     # Plots runtime
-    runtime_file_name = plot_name_folder + f'runtime_od_{order}_samples_{num_samples}.png'
+    runtime_file_name = plot_name_folder + f'runtime_od_{order}_samples_{num_samples}_nc{nc_start}.png'
     fig, ax = plt.subplots(figsize=(7, 5))
     for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
-        ax.plot(target_sizes, runtime[model_idx], label=model_name)
+        ax.plot(target_sizes, runtime[model_idx] / 1000.0, label=model_name)
     ax.set_xlabel('Target Size')
-    ax.set_ylabel('Runtime (ms)')
+    ax.set_ylabel('Runtime (s)')
     ax.legend()
-    ax.set_title(f'Runtime of AR NPs (S={num_samples})')
+    ax.set_title(f'Runtime of AR NPs (S={num_samples} NC={nc_start})')
     ax.grid(True, linestyle='--', alpha=0.4)
     fig.tight_layout()
     plt.savefig(runtime_file_name, dpi=300)
     # Plots memory
-    memory_file_name = plot_name_folder + f'memory_od_{order}_samples_{num_samples}.png'
+    memory_file_name = plot_name_folder + f'memory_od_{order}_samples_{num_samples}_nc{nc_start}.png'
     fig, ax = plt.subplots(figsize=(7, 5))
     for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
         ax.plot(target_sizes, memory[model_idx], label=model_name)
     ax.set_xlabel('Target Size')
     ax.set_ylabel('Memory Usage (MB)')
     ax.legend()
-    ax.set_title(f'Memory Usage of AR NPs (S={num_samples})')
+    ax.set_title(f'Memory Usage of AR NPs (S={num_samples} NC={nc_start})')
     ax.grid(True, linestyle='--', alpha=0.4)
     fig.tight_layout()
     plt.savefig(memory_file_name, dpi=300)
@@ -323,7 +322,7 @@ def get_model_list():
     conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
         'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
     models = [tnp_plain, incTNP, batchedTNP, priorBatched, conv_cnp, cnp]
-    models = [priorBatched, tnp_plain, batchedTNP, conv_cnp, cnp]
+    models = [tnp_plain, incTNP, conv_cnp, cnp]
     return models
 
 # Compares NP models in AR mode on RBF set
