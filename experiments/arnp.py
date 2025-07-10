@@ -309,7 +309,7 @@ def get_model_list():
         'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP')
     conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
         'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
-    models = [tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
+    models = [conv_cnp, tnp_plain, incTNP, batchedTNP, priorBatched, cnp]
     return models
 
 # Compares NP models in AR mode on RBF set

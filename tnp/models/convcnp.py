@@ -85,6 +85,7 @@ class ConvCNP(ConditionalNeuralProcess):
         likelihood: nn.Module,
     ):
         super().__init__(encoder, decoder, likelihood)
+        self.likelihood.min_noise = 1e-5 #  Adds little noise here because sometimes scale is exactly 0 - check to ensure this is small enough to not impact other perf - hacky
 
 
 class GriddedConvCNP(nn.Module):
