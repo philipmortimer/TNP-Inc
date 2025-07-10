@@ -179,6 +179,23 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
 
 # -------------------------------------------------------------------------------------------------------
 
+# Plots performance of select models with varying nc, nt, s
+def plot_rmse_predict_vs_time():
+    # Would be cool to plot like figure 7 of LBANP paper but with runtime vs rmse
+    # only worry is that to see big O runtime changes. Also RBF kernel could be bad example
+    # since quite simple. But would be really great to see like whole spectrum
+    # of TNP-D, incTNP-Batched, convCNP and CNP as a spectrum of performance vs time.
+    tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml',
+        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', 'TNP-D')
+    batchedTNP = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml',
+        'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'incTNP-Batched')
+    cnp = ('experiments/configs/synthetic1dRBF/gp_cnp_rangesame.yml',
+        'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP')
+    conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
+        'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
+    # Defines list of points to plot on graph - each item is (nc, nt, s)
+    tnp_plain_points = [(100, 50, 5), (100, 50, 10), ]
+
 # Measures timings of different models
 def measure_perf_timings():
     # Measure hypers
