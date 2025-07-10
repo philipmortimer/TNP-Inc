@@ -185,16 +185,84 @@ def plot_rmse_predict_vs_time():
     # only worry is that to see big O runtime changes. Also RBF kernel could be bad example
     # since quite simple. But would be really great to see like whole spectrum
     # of TNP-D, incTNP-Batched, convCNP and CNP as a spectrum of performance vs time.
+    device="cuda"
+    out_folder = "experiments/plot_results/ar/rmse/"
+    burn_in = 1
+    order="random"
+    aggregate_over = 1
+    max_batch = None
+    prioritise_fixed = False
     tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml',
         'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', 'TNP-D')
+    incTNP = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200', 'incTNP')
     batchedTNP = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml',
         'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'incTNP-Batched')
+    priorBatched = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'incTNP-Batched (Prior)')
     cnp = ('experiments/configs/synthetic1dRBF/gp_cnp_rangesame.yml',
         'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP')
     conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
         'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
-    # Defines list of points to plot on graph - each item is (nc, nt, s)
-    tnp_plain_points = [(100, 50, 5), (100, 50, 10), ]
+    models =[tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
+    # Number of samples
+    samples = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 100, 500, 1000]
+    runtime = np.zeros((len(models), len(samples)))
+    memory = np.zeros((len(models), len(samples)))
+    rmse = np.zeros((len(models), len(samples)))
+    ll = np.zeros((len(models), len(samples)))
+    starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+    data = get_rbf_rangesame_testset()
+    summary_txt = ""
+    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
+        model = get_model(model_yml, model_wab, seed=False, device=device)
+        model.eval()
+        for sample_idx, num_samples in enumerate(samples):
+            batch_runtimes = []
+            batch_memories = []
+            batch_rmses = []
+            batch_lls = []
+            for batch_idx, batch in tqdm(enumerate(data), desc=f's={num_samples} mod={model_name}'):
+                if max_batch is not None and batch_idx >= max_batch: break
+                run_runtimes = []
+                run_memories = []
+                run_rmses = []
+                run_lls = []
+                for j in range(burn_in+aggregate_over):
+                    torch.cuda.reset_peak_memory_stats()
+                    torch.cuda.synchronize()
+                    starter.record()
+                    with torch.no_grad():
+                        pred_dist = ar_predict(model=model, xc=batch.xc, yc=batch.yc, xt=batch.xt, order=order, num_samples=num_samples,
+                            device=device, device_ret=device, prioritise_fixed=prioritise_fixed)
+                    # Measures runtime
+                    ender.record()
+                    torch.cuda.synchronize()
+                    peak_memory_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+                    runtime_ms = starter.elapsed_time(ender)
+                    loglik = (pred_dist.log_prob(batch.yt.to(device)).sum() / batch.yt[..., 0].numel()).item()
+                    rmse_point = nn.functional.mse_loss(pred_dist.mean, batch.yt.to(device)).sqrt().cpu().mean()
+                    if j >= burn_in:
+                        run_runtimes.append(runtime_ms)
+                        run_memories.append(peak_memory_mb)
+                        run_rmses.append(rmse_point)
+                        run_lls.append(loglik)
+                # Aggregates metrics
+                batch_runtimes.append(np.mean(run_runtimes))
+                batch_memories.append(np.mean(run_memories))
+                batch_rmses.append(np.mean(run_rmses))
+                batch_lls.append(np.mean(run_lls))
+            runtime[model_idx, sample_idx] = np.mean(batch_runtimes)
+            rmse[model_idx, sample_idx] = np.mean(batch_rmses)
+            memory[model_idx, sample_idx] = np.mean(batch_memories)
+            ll[model_idx, sample_idx] = np.mean(batch_lls)
+            model_samp_summary = ("*" * 20) + f'\nModel: {model_name}\nRuntime(ms): {runtime[model_idx, sample_idx]}\nSamples: {num_samples}\nAverageMemoryUse(MB): {memory[model_idx, sample_idx]}\nRMSEMean: {rmse[model_idx, sample_idx]}\nLL: {ll[model_idx, sample_idx]}\n'
+            summary_txt += model_samp_summary
+            print(model_samp_summary)
+    # Writes model data to output files
+    with open(out_folder + 'summary_rmse.txt', 'w') as file_obj:
+        file_obj.write(summary_txt)
+
 
 # Measures timings of different models
 def measure_perf_timings():
@@ -369,6 +437,7 @@ def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
 
 
 if __name__ == "__main__":
-    measure_perf_timings()
+    plot_rmse_predict_vs_time()
+    #measure_perf_timings()
     #plot_ar_unrolls()
     #compare_rbf_models(base_out_txt_file="experiments/plot_results/ar/ar_rbf_comp")

@@ -1,0 +1,56 @@
+********************
+Model: CNP
+Runtime(ms): 174.44728240966796
+Samples: 1
+AverageMemoryUse(MB): 12.8849365234375
+RMSEMean: 0.44597163796424866
+LL: -3.9276646883692594
+********************
+Model: CNP
+Runtime(ms): 235.4224075317383
+Samples: 10
+AverageMemoryUse(MB): 50.2453125
+RMSEMean: 0.9874172210693359
+LL: -1.9004976093769073
+********************
+Model: CNP
+Runtime(ms): 433.2819625854492
+Samples: 20
+AverageMemoryUse(MB): 91.48857421875
+RMSEMean: 0.9769403338432312
+LL: -1.3870257079601287
+********************
+Model: CNP
+Runtime(ms): 679.103759765625
+Samples: 50
+AverageMemoryUse(MB): 214.9107177734375
+RMSEMean: 0.9736536145210266
+LL: -1.3067298501729965
+********************
+Model: ConvCNP
+Runtime(ms): 384.77976989746094
+Samples: 1
+AverageMemoryUse(MB): 13.9045654296875
+RMSEMean: 0.38896262645721436
+LL: -6.464181564003229
+********************
+Model: ConvCNP
+Runtime(ms): 301.06591949462893
+Samples: 10
+AverageMemoryUse(MB): 58.7366455078125
+RMSEMean: 0.9862655401229858
+LL: -2.4325873255729675
+********************
+Model: ConvCNP
+Runtime(ms): 420.82838134765626
+Samples: 20
+AverageMemoryUse(MB): 109.1407470703125
+RMSEMean: 0.9744626879692078
+LL: -1.3835997819900512
+********************
+Model: ConvCNP
+Runtime(ms): 853.6909759521484
+Samples: 50
+AverageMemoryUse(MB): 260.0285400390625
+RMSEMean: 0.97101229429245
+LL: -1.237286537885666
