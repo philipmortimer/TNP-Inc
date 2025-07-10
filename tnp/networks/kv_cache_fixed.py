@@ -15,8 +15,8 @@ def update_kv_cache_fixed(k_new, v_new, cache: Optional[dict], cache_id):
     _, _, _, v_dim = v_new.shape
     k, v, write_idx = cache[cache_id]
     total = write_idx + new_pts
-    k[:,:,write_idx:total,:] = k_new
-    v[:,:, write_idx:total,:] = v_new
+    k[:,:,write_idx:total,:].copy_(k_new)
+    v[:,:,write_idx:total,:].copy_(v_new)
     cache[cache_id] = (k, v, total)
 
     return k[:, :,:total,:], v[:,:,:total,:]
