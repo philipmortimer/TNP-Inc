@@ -1,0 +1,10 @@
+{
+    "model_names": [
+        "TNP-D"
+    ],
+    "trained_ctx_end": 64,
+    "gt_average_ll": 0.0034083626233041286,
+    "kernel_name": "RBF Kernel",
+    "npz_path": "experiments/plot_results/llstream/npz_kernel_RBF Kernel.npz",
+    "folder": "experiments/plot_results/llstream/"
+}

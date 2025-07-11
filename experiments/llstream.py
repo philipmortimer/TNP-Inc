@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 from tqdm import tqdm
 from arnp import ar_loglik
+import json
 
 
 matplotlib.rcParams["mathtext.fontset"] = "stix"
@@ -114,7 +115,8 @@ def get_model_list_combined():
     models_ar = [ar_tnp, ar_inctnp, ar_batchedtnp, ar_priorbatched, ar_cnp, ar_conv_cnp]
     # Return
     models_combined = models_plain + models_ar + models_a
-    return models_ar + models_a
+    model_cust = [tnp_plain, incTNP, batchedTNP, priorBatched, inctnpa, tnpa, ar_tnp, ar_inctnp, ar_batchedtnp, ar_priorbatched, ar_cnp, cnp]
+    return models_combined
 
 def get_model_list_rbf():
     # List of models to compare trained on rbf kernel
@@ -153,20 +155,21 @@ def get_model_list_rbf():
     models_ar = [ar_tnp, ar_inctnp, ar_batchedtnp, ar_priorbatched, ar_cnp, ar_conv_cnp]
     # Return
     models_combined = models_plain + models_ar + models_a
-    return models_ar + models_a
+    model_cust = [tnp_plain, incTNP, batchedTNP, priorBatched, inctnpa, tnpa, ar_tnp, ar_inctnp, ar_batchedtnp, ar_priorbatched, ar_cnp, cnp]
+    return models_combined
 
 
 def stream_data_test_rbf():
     # Hypers
-    burn_in = 0
+    burn_in = 1
     aggregate_over = 1
     batch_size = 16
-    max_batches = 1 # Set to None for no limit
-    max_nc = 500
+    max_batches = 6 # Set to None for no limit
+    max_nc = 1_000
     nt = 128
     start_ctx = 1
     end_ctx = max_nc
-    ctx_step = 50
+    ctx_step = 1
     trained_ctx_end = 64
     device="cuda"
     folder = "experiments/plot_results/llstream/"
@@ -176,15 +179,15 @@ def stream_data_test_rbf():
 
 def stream_data_test_combined():
     # Hypers
-    burn_in = 0
+    burn_in = 1
     aggregate_over = 1
     batch_size = 16
-    max_batches = 1 # Set to None for no limit
-    max_nc = 500
+    max_batches = 6 # Set to None for no limit
+    max_nc = 1_000
     nt = 128
     start_ctx = 1
     end_ctx = max_nc
-    ctx_step = 50
+    ctx_step = 1
     trained_ctx_end = 64
     device="cuda"
     folder = "experiments/plot_results/llstream/"
@@ -270,10 +273,46 @@ def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, 
     ll_list = np.mean(ll_list, axis=(2, 3))
     gt_average = np.mean(gt_lls, axis=0)
     condition_time_list = np.mean(condition_time_list, axis=(2, 3))
+
+    # Saves data to output file to be used when plotting
+    file_name_npz = f'npz_kernel_{kernel_name}.npz'
+    npz_arr_path = folder + file_name_npz
+    np.savez(npz_arr_path, ll=ll_list, ctx=ctx, time=condition_time_list)
+    json_file_path = folder + f'json_{kernel_name}.json'
+    summary_meta = {
+        "model_names": [m[2] for m in models],
+        "trained_ctx_end": trained_ctx_end,
+        "gt_average_ll": gt_average,
+        "kernel_name": kernel_name,
+        "npz_path": npz_arr_path,
+        "folder": folder,
+    }
+    with open(json_file_path, 'w') as fileobj:
+        json.dump(summary_meta, fileobj, indent=4)
+    print(f"Summary at {json_file_path}")
+    
+    plot_saved_info(json_file_path)
+
+
+def plot_saved_info(json_path):
+    with open(json_path, 'r') as fileobj:
+        metadata = json.load(fileobj)
+    model_names = metadata['model_names']
+    trained_ctx_end = metadata['trained_ctx_end']
+    gt_average = metadata['gt_average_ll']
+    kernel_name = metadata['kernel_name']
+    folder = metadata['folder']
+    npz_path = metadata['npz_path']
+    # Loads np arrays
+    data = np.load(npz_path)
+    ll_list = data['ll']
+    condition_time_list = data['time']
+    ctx = data['ctx']
+
     # Plots LL as context size increases - red dotted line to show when going beyond trained context size
     ll_file_name = folder + f'll_kernel_{kernel_name}.png'
     fig, ax = plt.subplots(figsize=(7, 5))
-    for model_idx, (model_yml, model_wab, model_name, use_ar) in enumerate(models):
+    for model_idx, model_name in enumerate(model_names):
         ax.plot(ctx, ll_list[model_idx], label=model_name)
     ax.axvline(x=trained_ctx_end, color='red', linestyle=':')
     ax.axhline(y=gt_average, color='grey', linestyle='--', label='Mean GT LL')
@@ -288,7 +327,7 @@ def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, 
     # Plots conditioning time vs number of context points
     runtime_file_name = folder + f'runtime_kernel_{kernel_name}.png'
     fig, ax = plt.subplots(figsize=(7, 5))
-    for model_idx, (model_yml, model_wab, model_name, use_ar) in enumerate(models):
+    for model_idx, model_name in enumerate(model_names):
         ax.plot(ctx, condition_time_list[model_idx], label=model_name)
     ax.set_xlabel('Number of Context Points')
     ax.set_ylabel('Mean Conditioning Time (ms)')
@@ -298,7 +337,7 @@ def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, 
     fig.tight_layout()
     plt.savefig(runtime_file_name, dpi=300)
 
-                
+
 
 if __name__ == "__main__":
     stream_data_test_rbf()
