@@ -268,9 +268,9 @@ def plot_rmse_predict_vs_time():
 def measure_perf_timings():
     # Measure hypers
     burn_in = 1 # Number of burn in runs to ignore
-    aggregate_over = 2 # Number of runs to aggregate data over
+    aggregate_over = 1 # Number of runs to aggregate data over
     token_step = 50 # How many increments of tokens to go up in
-    min_nt, max_nt = 1, 5001
+    min_nt, max_nt = 1, 2001
     dx, dy, m = 1, 1, 1
     nc_start = 1
     num_samples=50 # Samples to unroll in ar_predict
@@ -437,7 +437,7 @@ def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
 
 
 if __name__ == "__main__":
-    plot_rmse_predict_vs_time()
-    #measure_perf_timings()
+    #plot_rmse_predict_vs_time()
+    measure_perf_timings()
     #plot_ar_unrolls()
     #compare_rbf_models(base_out_txt_file="experiments/plot_results/ar/ar_rbf_comp")
