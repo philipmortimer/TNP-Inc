@@ -206,7 +206,7 @@ def plot_rmse_predict_vs_time():
         'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
     models =[tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
     # Number of samples
-    samples = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 100, 500, 1000]
+    samples = [1, 5, 10, 20, 30, 40, 50, 100, 500, 1000, 2000]
     runtime = np.zeros((len(models), len(samples)))
     memory = np.zeros((len(models), len(samples)))
     rmse = np.zeros((len(models), len(samples)))
