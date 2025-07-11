@@ -190,7 +190,7 @@ def plot_rmse_predict_vs_time():
     burn_in = 1
     order="random"
     aggregate_over = 1
-    max_batch = None
+    max_batch = 20
     prioritise_fixed = False
     tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml',
         'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', 'TNP-D')
@@ -206,7 +206,7 @@ def plot_rmse_predict_vs_time():
         'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
     models =[tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
     # Number of samples
-    samples = [1, 5, 10, 20, 30, 40, 50, 100, 500, 1000, 2000]
+    samples = [1, 5, 10, 20, 30, 40, 50, 100, 200]
     runtime = np.zeros((len(models), len(samples)))
     memory = np.zeros((len(models), len(samples)))
     rmse = np.zeros((len(models), len(samples)))
@@ -270,7 +270,7 @@ def measure_perf_timings():
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 1 # Number of runs to aggregate data over
     token_step = 50 # How many increments of tokens to go up in
-    min_nt, max_nt = 1, 2001
+    min_nt, max_nt = 1, 5001
     dx, dy, m = 1, 1, 1
     nc_start = 1
     num_samples=50 # Samples to unroll in ar_predict
