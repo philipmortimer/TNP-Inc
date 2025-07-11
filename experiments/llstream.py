@@ -1,0 +1,194 @@
+# Plots performance of models as they get increasingly more context - including beyond the original size seen in training
+from tnp.data.gp import RandomScaleGPGenerator
+from tnp.networks.gp import RBFKernel
+from tnp.networks.gp import MaternKernel
+from tnp.networks.gp import PeriodicKernel
+from functools import partial
+from plot_adversarial_perms import get_model
+import numpy as np
+from tnp.models.incUpdateBase import IncUpdateEff
+from tnp.data.base import Batch
+from tnp.utils.np_functions import np_pred_fn
+import os
+import torch
+import matplotlib.pyplot as plt
+import matplotlib
+from tqdm import tqdm
+
+
+matplotlib.rcParams["mathtext.fontset"] = "stix"
+matplotlib.rcParams["font.family"] = "STIXGeneral"
+matplotlib.rcParams["axes.titlesize"]= 14
+
+
+# Gets combined dataset with specific number of context points
+def get_combined_rangesame_testset(nc: int, nt: int, batch_size: int):
+    # RBF Dataset
+    min_nc = nc
+    max_nc = nc
+    nt= 128
+    context_range = [[-2.0, 2.0]]
+    target_range = [[-2.0, 2.0]]
+    samples_per_epoch = 4_096
+    noise_std = 0.1
+    deterministic = True
+    ard_num_dims = 1
+    min_log10_lengthscale = -0.602
+    max_log10_lengthscale = 0.0
+    min_log10_period = 0.301
+    max_log10_period = 0.301
+    rbf_kernel_factory = partial(RBFKernel, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
+                         max_log10_lengthscale=max_log10_lengthscale)
+    matern12_kernel_factory = partial(MaternKernel, nu=0.5, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
+                         max_log10_lengthscale=max_log10_lengthscale)
+    matern32_kernel_factory = partial(MaternKernel, nu=1.5, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
+                         max_log10_lengthscale=max_log10_lengthscale)
+    matern52_kernel_factory = partial(MaternKernel, nu=2.5, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
+                         max_log10_lengthscale=max_log10_lengthscale)
+    periodic_kernel_factory = partial(PeriodicKernel, min_log10_period=min_log10_period, max_log10_period=max_log10_period, 
+            ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale, max_log10_lengthscale=max_log10_lengthscale)
+    kernels = [rbf_kernel_factory, matern12_kernel_factory, matern32_kernel_factory, matern52_kernel_factory, periodic_kernel_factory]
+    gen_test = RandomScaleGPGenerator(dim=1, min_nc=min_nc, max_nc=max_nc, min_nt=nt, max_nt=nt, batch_size=batch_size,
+        context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=noise_std,
+        deterministic=deterministic, kernel=kernels)
+    data = list(gen_test)
+    return data, "Combined Kernel"
+
+def get_model_list_combined():
+    # List of models to compare trained on combined kernel
+    tnp_plain = ('experiments/configs/synthetic1d/gp_plain_tnp_rangesame.yml',
+        'pm846-university-of-cambridge/plain-tnp-rangesame/model-fyr9u053:v200', 'TNP-D')
+    incTNP = ('experiments/configs/synthetic1d/gp_causal_tnp_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-tnp-rangesame/model-l69k9pix:v200', 'incTNP')
+    batchedTNP = ('experiments/configs/synthetic1d/gp_batched_causal_tnp_rangesame.yml',
+        'pm846-university-of-cambridge/mask-batched-tnp-rangesame/model-lmywe04f:v200', 'incTNP-Batched')
+    priorBatched = ('experiments/configs/synthetic1d/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-combined-rangesame/model-xdgnof8x:v200', 'incTNP-Batched (Prior)')
+    cnp = ('experiments/configs/synthetic1d/gp_cnp_rangesame.yml',
+        'pm846-university-of-cambridge/cnp-combined-rangesame/model-1pzsub0x:v200', 'CNP')
+    conv_cnp = ('experiments/configs/synthetic1d/gp_convcnp_rangesame.yml',
+        'pm846-university-of-cambridge/convcnp-combined-rangesame/model-awxl9sr4:v200', 'ConvCNP')
+    inctnpa = ('experiments/configs/synthetic1d/gp_inctnpa_rangesame.yml',
+        'pm846-university-of-cambridge/inctnpa/model-dnbp0124:v199', "incTNP-A")
+    tnpa = ('experiments/configs/synthetic1d/gp_tnpa_rangesame.yml',
+        'pm846-university-of-cambridge/tnpa/model-56ktaaqp:v199', "TNP-A")
+    models = [tnp_plain, incTNP, batchedTNP, priorBatched, conv_cnp, cnp, inctnpa, tnpa]
+    return models
+
+def stream_data_test_combined():
+    # Hypers
+    burn_in = 1
+    aggregate_over = 1
+    batch_size = 16
+    max_batches = 4 # Set to None for no limit
+    max_nc = 1000
+    nt = 128
+    start_ctx = 1
+    end_ctx = max_nc
+    ctx_step = 1
+    trained_ctx_end = 64
+    device="cuda"
+    folder = "experiments/plot_results/llstream/"
+    # End of hypers
+    stream_data_test(get_combined_rangesame_testset(max_nc, nt, batch_size), get_model_list_combined(), max_nc, nt, start_ctx, end_ctx, ctx_step, device, folder, trained_ctx_end, max_batches, burn_in, aggregate_over)
+
+@torch.no_grad
+def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, device, folder, trained_ctx_end, max_batches, burn_in, aggregate_over):
+    data, kernel_name = dataset
+    ctx = list(range(start_ctx, end_ctx, ctx_step))
+    ctx.append(end_ctx)
+    ctx = np.array(ctx)
+    ll_list = np.zeros((len(models), len(ctx), len(data), aggregate_over))
+    condition_time_list = np.zeros((len(models), len(ctx), len(data), aggregate_over))
+    starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+    gt_lls = np.zeros(len(data))
+    gt_ll_caculated = False
+    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
+        model = get_model(model_yml, model_wab, seed=False, device=device)
+        model.eval()
+        is_model_inc = isinstance(model, IncUpdateEff)
+        for batch_idx, batch in tqdm(enumerate(data), desc=f'{model_name}'):
+            if max_batches is not None and batch_idx >= max_batches: break
+            # Moves batch to gpu
+            batch.xc, batch.yc, batch.xt, batch.yt = batch.xc.to(device), batch.yc.to(device), batch.xt.to(device), batch.yt.to(device)
+            xc, yc, xt, yt = batch.xc, batch.yc, batch.xt, batch.yt
+            m, nt, dy = yt.shape
+            # Compute gt ll
+            if not gt_ll_caculated:
+                _, _, gt_loglik = batch.gt_pred(
+                            xc=xc, yc=yc, xt=xt, yt=yt
+                        )
+                gt_loglik = (gt_loglik.sum() / (m * nt)).item()
+                gt_lls[batch_idx] = gt_loglik
+            if is_model_inc: model.init_inc_structs(m=m, max_nc=max_nc, device=device)
+            for ctx_idx, ctx_upper in enumerate(ctx):
+                # Does model burn in and aggregation
+                for j in range(burn_in + aggregate_over):
+                    ctx_lower = 0 if ctx_idx == 0 else ctx[ctx_idx - 1]
+                    if is_model_inc:
+                        xc_new, yc_new = xc[:, ctx_lower:ctx_upper, :], yc[:, ctx_lower:ctx_upper,  :]
+                        # Time the conditioning phase
+                        torch.cuda.synchronize()
+                        starter.record()
+                        with torch.no_grad():
+                            model.update_ctx(xc=xc_new, yc=yc_new)
+                        ender.record()
+                        torch.cuda.synchronize()
+                        runtime_ms = starter.elapsed_time(ender)
+                        # Gets predictive distribution
+                        pred_dist = model.query(xt=xt, dy=dy)
+                    else:
+                        xc_new, yc_new = xc[:, :ctx_upper, :], yc[:, :ctx_upper, :]
+                        batch = Batch(xc=xc_new, yc=yc_new, xt=xt, yt=yt, x=None, y=None)
+                        # Times whole prediction and treats it as conditioning cost
+                        torch.cuda.synchronize()
+                        starter.record()
+                        with torch.no_grad():
+                            pred_dist = np_pred_fn(model, batch, predict_without_yt_tnpa=False) # uses teacher forcing if possible
+                        ender.record()
+                        torch.cuda.synchronize()
+                        runtime_ms = starter.elapsed_time(ender)
+                    loglik = (pred_dist.log_prob(yt).sum() / yt[..., 0].numel()).item() # TODO Check this for AR cases is correctly handled
+                    # Records likelihood and runtime
+                    write_idx = j - burn_in
+                    if write_idx >= 0:
+                        ll_list[model_idx, ctx_idx, batch_idx, write_idx] = loglik
+                        condition_time_list[model_idx, ctx_idx, batch_idx, write_idx] = runtime_ms
+        gt_ll_caculated = True
+    # Averages over batches
+    ll_list = np.mean(ll_list, axis=(2, 3))
+    gt_average = np.mean(gt_lls, axis=0)
+    condition_time_list = np.mean(condition_time_list, axis=(2, 3))
+    # Plots LL as context size increases - red dotted line to show when going beyond trained context size
+    ll_file_name = folder + f'll_kernel_{kernel_name}.png'
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
+        ax.plot(ctx, ll_list[model_idx], label=model_name)
+    ax.axvline(x=trained_ctx_end, color='red', linestyle=':')
+    ax.axhline(y=gt_average, color='grey', linestyle='--', label='Mean GT LL')
+    ax.text(x=trained_ctx_end + 5, y=ax.get_ylim()[1] * 0.40, s='Max Trained NC', color='red', rotation=90, verticalalignment='top')
+    ax.set_xlabel('Number of Context Points')
+    ax.set_ylabel('Mean Log-Likelihood')
+    ax.legend()
+    ax.set_title(f'Streamed Performance of NP Models on {kernel_name}')
+    ax.grid(True, linestyle='--', alpha=0.4)
+    fig.tight_layout()
+    plt.savefig(ll_file_name, dpi=300)
+    # Plots conditioning time vs number of context points
+    runtime_file_name = folder + f'runtime_kernel_{kernel_name}.png'
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
+        ax.plot(ctx, condition_time_list[model_idx], label=model_name)
+    ax.set_xlabel('Number of Context Points')
+    ax.set_ylabel('Mean Conditioning Time (ms)')
+    ax.legend()
+    ax.set_title(f'Conditioning Time of NP Models')
+    ax.grid(True, linestyle='--', alpha=0.4)
+    fig.tight_layout()
+    plt.savefig(runtime_file_name, dpi=300)
+
+                
+
+if __name__ == "__main__":
+    stream_data_test_combined()
+
