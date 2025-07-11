@@ -14,12 +14,35 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib
 from tqdm import tqdm
+from arnp import ar_loglik
 
 
 matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
 matplotlib.rcParams["axes.titlesize"]= 14
 
+def get_rbf_rangesame_testset(nc: int, nt: int, batch_size: int):
+    # RBF Dataset
+    min_nc = nc
+    max_nc = nc
+    nt = nt
+    context_range = [[-2.0, 2.0]]
+    target_range = [[-2.0, 2.0]]
+    samples_per_epoch = 4_096
+    batch_size = batch_size
+    noise_std = 0.1
+    deterministic = True
+    ard_num_dims = 1
+    min_log10_lengthscale = -0.602
+    max_log10_lengthscale = 0.0
+    rbf_kernel_factory = partial(RBFKernel, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
+                         max_log10_lengthscale=max_log10_lengthscale)
+    kernels = [rbf_kernel_factory]
+    gen_test = RandomScaleGPGenerator(dim=1, min_nc=min_nc, max_nc=max_nc, min_nt=nt, max_nt=nt, batch_size=batch_size,
+        context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=noise_std,
+        deterministic=deterministic, kernel=kernels)
+    data = list(gen_test)
+    return data, "RBF Kernel"
 
 # Gets combined dataset with specific number of context points
 def get_combined_rangesame_testset(nc: int, nt: int, batch_size: int):
@@ -57,35 +80,111 @@ def get_combined_rangesame_testset(nc: int, nt: int, batch_size: int):
 def get_model_list_combined():
     # List of models to compare trained on combined kernel
     tnp_plain = ('experiments/configs/synthetic1d/gp_plain_tnp_rangesame.yml',
-        'pm846-university-of-cambridge/plain-tnp-rangesame/model-fyr9u053:v200', 'TNP-D')
+        'pm846-university-of-cambridge/plain-tnp-rangesame/model-fyr9u053:v200', 'TNP-D', False)
     incTNP = ('experiments/configs/synthetic1d/gp_causal_tnp_rangesame.yml', 
-        'pm846-university-of-cambridge/mask-tnp-rangesame/model-l69k9pix:v200', 'incTNP')
+        'pm846-university-of-cambridge/mask-tnp-rangesame/model-l69k9pix:v200', 'incTNP', False)
     batchedTNP = ('experiments/configs/synthetic1d/gp_batched_causal_tnp_rangesame.yml',
-        'pm846-university-of-cambridge/mask-batched-tnp-rangesame/model-lmywe04f:v200', 'incTNP-Batched')
-    priorBatched = ('experiments/configs/synthetic1d/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-combined-rangesame/model-xdgnof8x:v200', 'incTNP-Batched (Prior)')
+        'pm846-university-of-cambridge/mask-batched-tnp-rangesame/model-lmywe04f:v200', 'incTNP-Batched', False)
+    priorBatched = ('experiments/configs/synthetic1d/gp_priorbatched_causal_tnp_combined_rangesame.yml',
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-combined-rangesame/model-xdgnof8x:v200', 'incTNP-Batched (Prior)', False)
     cnp = ('experiments/configs/synthetic1d/gp_cnp_rangesame.yml',
-        'pm846-university-of-cambridge/cnp-combined-rangesame/model-1pzsub0x:v200', 'CNP')
+        'pm846-university-of-cambridge/cnp-combined-rangesame/model-1pzsub0x:v200', 'CNP', False)
     conv_cnp = ('experiments/configs/synthetic1d/gp_convcnp_rangesame.yml',
-        'pm846-university-of-cambridge/convcnp-combined-rangesame/model-awxl9sr4:v200', 'ConvCNP')
+        'pm846-university-of-cambridge/convcnp-combined-rangesame/model-awxl9sr4:v200', 'ConvCNP', False)
+    models_plain = [tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
+    # TNP-A Class models
     inctnpa = ('experiments/configs/synthetic1d/gp_inctnpa_rangesame.yml',
-        'pm846-university-of-cambridge/inctnpa/model-dnbp0124:v199', "incTNP-A")
+        'pm846-university-of-cambridge/inctnpa/model-dnbp0124:v199', "incTNP-A", False)
     tnpa = ('experiments/configs/synthetic1d/gp_tnpa_rangesame.yml',
-        'pm846-university-of-cambridge/tnpa/model-56ktaaqp:v199', "TNP-A")
-    models = [tnp_plain, incTNP, batchedTNP, priorBatched, conv_cnp, cnp, inctnpa, tnpa]
-    return models
+        'pm846-university-of-cambridge/tnpa/model-56ktaaqp:v199', "TNP-A", False)
+    models_a = [inctnpa, tnpa]
+    # AR NPS
+    ar_tnp = ('experiments/configs/synthetic1d/gp_plain_tnp_rangesame.yml',
+        'pm846-university-of-cambridge/plain-tnp-rangesame/model-fyr9u053:v200', ' AR TNP-D', True)
+    ar_inctnp = ('experiments/configs/synthetic1d/gp_causal_tnp_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-tnp-rangesame/model-l69k9pix:v200', 'AR incTNP', True)
+    ar_batchedtnp = ('experiments/configs/synthetic1d/gp_batched_causal_tnp_rangesame.yml',
+        'pm846-university-of-cambridge/mask-batched-tnp-rangesame/model-lmywe04f:v200', 'AR incTNP-Batched', True)
+    ar_priorbatched =('experiments/configs/synthetic1d/gp_priorbatched_causal_tnp_combined_rangesame.yml',
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-combined-rangesame/model-xdgnof8x:v200', 'AR incTNP-Batched (Prior)', True)
+    ar_cnp = ('experiments/configs/synthetic1d/gp_cnp_rangesame.yml',
+        'pm846-university-of-cambridge/cnp-combined-rangesame/model-1pzsub0x:v200', 'AR CNP', True)
+    ar_conv_cnp = ('experiments/configs/synthetic1d/gp_convcnp_rangesame.yml',
+        'pm846-university-of-cambridge/convcnp-combined-rangesame/model-awxl9sr4:v200', 'AR ConvCNP', True)
+    models_ar = [ar_tnp, ar_inctnp, ar_batchedtnp, ar_priorbatched, ar_cnp, ar_conv_cnp]
+    # Return
+    models_combined = models_plain + models_ar + models_a
+    return models_ar + models_a
 
-def stream_data_test_combined():
+def get_model_list_rbf():
+    # List of models to compare trained on rbf kernel
+    tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml',
+        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', 'TNP-D', False)
+    incTNP = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200', 'incTNP', False)
+    batchedTNP = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml',
+        'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'incTNP-Batched', False)
+    priorBatched = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'incTNP-Batched (Prior)', False)
+    cnp = ('experiments/configs/synthetic1dRBF/gp_cnp_rangesame.yml',
+        'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP', False)
+    conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
+        'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP', False)
+    models_plain = [tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
+    # TNP-A Class models
+    inctnpa = ('experiments/configs/synthetic1dRBF/gp_inctnpa_rangesame.yml',
+        'pm846-university-of-cambridge/inctnpa-rbf-rangesame/model-5ob47t8l:v199', "incTNP-A", False)
+    tnpa = ('experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml',
+        'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-e6yry1ri:v199', "TNP-A", False)
+    models_a = [inctnpa, tnpa]
+    # AR NPS
+    ar_tnp = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml',
+        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', 'TNP-D', True)
+    ar_inctnp = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
+        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200', 'incTNP', True)
+    ar_batchedtnp = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml',
+        'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'incTNP-Batched', True)
+    ar_priorbatched = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'incTNP-Batched (Prior)', True)
+    ar_cnp = ('experiments/configs/synthetic1dRBF/gp_cnp_rangesame.yml',
+        'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP', True)
+    ar_conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
+        'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP', True)
+    models_ar = [ar_tnp, ar_inctnp, ar_batchedtnp, ar_priorbatched, ar_cnp, ar_conv_cnp]
+    # Return
+    models_combined = models_plain + models_ar + models_a
+    return models_ar + models_a
+
+
+def stream_data_test_rbf():
     # Hypers
-    burn_in = 1
+    burn_in = 0
     aggregate_over = 1
     batch_size = 16
-    max_batches = 4 # Set to None for no limit
-    max_nc = 1000
+    max_batches = 1 # Set to None for no limit
+    max_nc = 500
     nt = 128
     start_ctx = 1
     end_ctx = max_nc
-    ctx_step = 1
+    ctx_step = 50
+    trained_ctx_end = 64
+    device="cuda"
+    folder = "experiments/plot_results/llstream/"
+    # End of hypers
+    stream_data_test(get_rbf_rangesame_testset(max_nc, nt, batch_size), get_model_list_rbf(), max_nc, nt, start_ctx, end_ctx, ctx_step, device, folder, trained_ctx_end, max_batches, burn_in, aggregate_over)
+
+
+def stream_data_test_combined():
+    # Hypers
+    burn_in = 0
+    aggregate_over = 1
+    batch_size = 16
+    max_batches = 1 # Set to None for no limit
+    max_nc = 500
+    nt = 128
+    start_ctx = 1
+    end_ctx = max_nc
+    ctx_step = 50
     trained_ctx_end = 64
     device="cuda"
     folder = "experiments/plot_results/llstream/"
@@ -103,7 +202,7 @@ def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, 
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
     gt_lls = np.zeros(len(data))
     gt_ll_caculated = False
-    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
+    for model_idx, (model_yml, model_wab, model_name, use_ar) in enumerate(models):
         model = get_model(model_yml, model_wab, seed=False, device=device)
         model.eval()
         is_model_inc = isinstance(model, IncUpdateEff)
@@ -125,7 +224,18 @@ def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, 
                 # Does model burn in and aggregation
                 for j in range(burn_in + aggregate_over):
                     ctx_lower = 0 if ctx_idx == 0 else ctx[ctx_idx - 1]
-                    if is_model_inc:
+                    if use_ar:
+                        xc_new, yc_new = xc[:, :ctx_upper, :], yc[:, :ctx_upper, :]
+                        # Times LL but this doesnt really make sense for a timing as is teacher forcing
+                        torch.cuda.synchronize()
+                        starter.record()
+                        with torch.no_grad():
+                            loglik = ar_loglik(np_model=model, xc=xc_new, yc=yc_new, xt=xt, yt=yt, 
+                                           normalise=True, order="random").mean().item()
+                        ender.record()
+                        torch.cuda.synchronize()
+                        runtime_ms = starter.elapsed_time(ender)
+                    elif is_model_inc:
                         xc_new, yc_new = xc[:, ctx_lower:ctx_upper, :], yc[:, ctx_lower:ctx_upper,  :]
                         # Time the conditioning phase
                         torch.cuda.synchronize()
@@ -137,6 +247,7 @@ def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, 
                         runtime_ms = starter.elapsed_time(ender)
                         # Gets predictive distribution
                         pred_dist = model.query(xt=xt, dy=dy)
+                        loglik = (pred_dist.log_prob(yt).sum() / yt[..., 0].numel()).item()
                     else:
                         xc_new, yc_new = xc[:, :ctx_upper, :], yc[:, :ctx_upper, :]
                         batch = Batch(xc=xc_new, yc=yc_new, xt=xt, yt=yt, x=None, y=None)
@@ -148,7 +259,7 @@ def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, 
                         ender.record()
                         torch.cuda.synchronize()
                         runtime_ms = starter.elapsed_time(ender)
-                    loglik = (pred_dist.log_prob(yt).sum() / yt[..., 0].numel()).item() # TODO Check this for AR cases is correctly handled
+                        loglik = (pred_dist.log_prob(yt).sum() / yt[..., 0].numel()).item()
                     # Records likelihood and runtime
                     write_idx = j - burn_in
                     if write_idx >= 0:
@@ -162,7 +273,7 @@ def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, 
     # Plots LL as context size increases - red dotted line to show when going beyond trained context size
     ll_file_name = folder + f'll_kernel_{kernel_name}.png'
     fig, ax = plt.subplots(figsize=(7, 5))
-    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
+    for model_idx, (model_yml, model_wab, model_name, use_ar) in enumerate(models):
         ax.plot(ctx, ll_list[model_idx], label=model_name)
     ax.axvline(x=trained_ctx_end, color='red', linestyle=':')
     ax.axhline(y=gt_average, color='grey', linestyle='--', label='Mean GT LL')
@@ -177,7 +288,7 @@ def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, 
     # Plots conditioning time vs number of context points
     runtime_file_name = folder + f'runtime_kernel_{kernel_name}.png'
     fig, ax = plt.subplots(figsize=(7, 5))
-    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
+    for model_idx, (model_yml, model_wab, model_name, use_ar) in enumerate(models):
         ax.plot(ctx, condition_time_list[model_idx], label=model_name)
     ax.set_xlabel('Number of Context Points')
     ax.set_ylabel('Mean Conditioning Time (ms)')
@@ -190,5 +301,7 @@ def stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_step, 
                 
 
 if __name__ == "__main__":
+    stream_data_test_rbf()
     stream_data_test_combined()
+    # TODO look at distribution drift maybe
 
