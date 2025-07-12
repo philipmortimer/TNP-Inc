@@ -1,9 +1,22 @@
 {
     "model_names": [
-        "TNP-D"
+        "TNP-D",
+        "incTNP",
+        "incTNP-Batched",
+        "incTNP-Batched (Prior)",
+        "CNP",
+        "ConvCNP",
+        "TNP-D",
+        "incTNP",
+        "incTNP-Batched",
+        "incTNP-Batched (Prior)",
+        "CNP",
+        "ConvCNP",
+        "incTNP-A",
+        "TNP-A"
     ],
     "trained_ctx_end": 64,
-    "gt_average_ll": 0.0034083626233041286,
+    "gt_average_ll": 0.006848679389804602,
     "kernel_name": "RBF Kernel",
     "npz_path": "experiments/plot_results/llstream/npz_kernel_RBF Kernel.npz",
     "folder": "experiments/plot_results/llstream/"

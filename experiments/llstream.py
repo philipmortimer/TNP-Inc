@@ -165,11 +165,11 @@ def stream_data_test_rbf():
     aggregate_over = 1
     batch_size = 16
     max_batches = 2 # Set to None for no limit
-    max_nc = 10_000
+    max_nc = 5_000
     nt = 128
     start_ctx = 1
     end_ctx = max_nc
-    ctx_step = 500
+    ctx_step = 250
     trained_ctx_end = 64
     device="cuda"
     folder = "experiments/plot_results/llstream/"
@@ -183,11 +183,11 @@ def stream_data_test_combined():
     aggregate_over = 1
     batch_size = 16
     max_batches = 2 # Set to None for no limit
-    max_nc = 10_000
+    max_nc = 5_000
     nt = 128
     start_ctx = 1
     end_ctx = max_nc
-    ctx_step = 500
+    ctx_step = 250
     trained_ctx_end = 64
     device="cuda"
     folder = "experiments/plot_results/llstream/"

@@ -1,0 +1,23 @@
+{
+    "model_names": [
+        "TNP-D",
+        "incTNP",
+        "incTNP-Batched",
+        "incTNP-Batched (Prior)",
+        "CNP",
+        "ConvCNP",
+        " AR TNP-D",
+        "AR incTNP",
+        "AR incTNP-Batched",
+        "AR incTNP-Batched (Prior)",
+        "AR CNP",
+        "AR ConvCNP",
+        "incTNP-A",
+        "TNP-A"
+    ],
+    "trained_ctx_end": 64,
+    "gt_average_ll": 0.006848963443189859,
+    "kernel_name": "Combined Kernel",
+    "npz_path": "experiments/plot_results/llstream/npz_kernel_Combined Kernel.npz",
+    "folder": "experiments/plot_results/llstream/"
+}
