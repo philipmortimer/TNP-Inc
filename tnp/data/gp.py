@@ -1,12 +1,12 @@
 import random
 from abc import ABC
-from typing import Dict, Iterable, Optional, Tuple, Union, List
+from typing import Dict, Iterable, Optional, Tuple, Union, List, Callable
 
 import einops
 import gpytorch
 import torch
 
-from ..networks.gp import RandomHyperparameterKernel
+from ..networks.gp import RandomHyperparameterKernel, ChangeSurfaceKernel
 from .base import GroundTruthPredictor
 from .synthetic import SyntheticGeneratorUniformInput
 
@@ -274,3 +274,61 @@ class RandomScaleGPGeneratorSameInputs(RandomScaleGPGenerator):
         gt_pred = self.set_up_gp()
         sample_shape = x.shape[:-2]
         return gt_pred.sample_outputs(x[0], sample_shape=sample_shape), gt_pred
+
+
+# GP Generator for a change surface kernel - to see the distribution shift over time
+class ChangeKernelGPGenerator(GPGenerator, SyntheticGeneratorUniformInput):
+    def __init__(
+        self,
+        *,
+        kernels: Tuple[RandomHyperparameterKernel, ...],  # Kernel factories
+        noise_std: float,
+        max_nc: int,
+        t0: int,
+        tau: float,
+        **kwargs,
+    ):
+        super().__init__(kernel=kernels, noise_std=noise_std, max_nc=max_nc, **kwargs)
+        self.max_nc = max_nc
+        self.t0 = t0
+        self.tau = tau
+
+    # Helper to randomly sample kernels. In case of just rbf will sample two rbf factories.
+    # In case of combined may sample any two combos of the five.
+    @staticmethod
+    def _draw_two_kernel_factories(
+        factories: Tuple[Callable[[], gpytorch.kernels.Kernel], ...]
+    ) -> Tuple[Callable[[], gpytorch.kernels.Kernel],
+            Callable[[], gpytorch.kernels.Kernel]]:
+        if len(factories) == 1:
+            return factories[0], factories[0]
+        return random.sample(factories, 2)
+
+    # Intialises the GP with the change kernel
+    def set_up_gp(self) -> GPGroundTruthPredictor:
+        f1, f2 = self._draw_two_kernel_factories(self.kernel)
+        k1 = f1()
+        k1.sample_hyperparameters()
+        k2 = f2()
+        k2.sample_hyperparameters()
+
+        change_kern = ChangeSurfaceKernel(k1=k1, k2=k2, t0=self.t0, tau=self.tau)
+
+        likelihood = gpytorch.likelihoods.GaussianLikelihood()
+        likelihood.noise = self.noise_std ** 2
+
+        return GPGroundTruthPredictor(kernel=change_kern, likelihood=likelihood)
+
+    # Samples inputs and appends time stamp (number of context points) to control blurring of two kernels
+    def sample_inputs(
+        self,
+        nc: int,
+        batch_shape: torch.Size,
+        nt: int,
+    ) -> torch.Tensor:
+        x_space = super().sample_inputs(nc=nc, batch_shape=batch_shape, nt=nt) # The actual x
+        m, n, dx = x_space.shape
+        t_index = torch.arange(n, dtype=x_space.dtype, device=x_space.device)
+        t_index = einops.repeat(t_index, "n -> m n 1", m=m)
+        x = torch.cat([x_space, t_index], dim=-1) # [m, n, dx + 1]
+        return x

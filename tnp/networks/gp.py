@@ -153,3 +153,51 @@ class RandomGibbsKernel(GibbsKernel, RandomHyperparameterKernel):
             changepoint=changepoint,
             direction=direction,
         )
+
+# Change surface kernel for two kernels -> blurs between both (see https://proceedings.mlr.press/v51/herlands16.pdf [this is two case instance])
+class ChangeSurfaceKernel(gpytorch.kernels.Kernel):
+    def __init__(
+        self,
+        k1: gpytorch.kernels.Kernel, # Start Kernel
+        k2: gpytorch.kernels.Kernel, # End Kernel
+        t0: float, # Change point centre (number of context points at which two kernels are blurred exactly 50-50)
+        tau: float, # Scale of change tau -> 0 means instant switch between two (no smoothing)
+        eps: float = 1e-6, # Minimum allowed value of tau - prevents div by zero and numerical badness
+    ):
+        super().__init__()
+        self.tau = max(tau, eps)
+        self.sigmoid = torch.nn.Sigmoid()
+        self.k1 = k1
+        self.k2 = k2
+        self.t0 = t0
+
+    # Last coordinate of xs is now the context index (time stamp) -> allows it to get correct sample
+    def forward(self, x1, x2, diag=False, **params):
+        # Unpacks time step (i.e. no context points from actual x data)
+        x1_space, t1 = x1[..., :-1], x1[..., -1:]
+        x2_space, t2 = x2[..., :-1], x2[..., -1:]
+
+        w1 = self.sigmoid((t1 - self.t0) / self.tau) # [n1, 1]
+        w2 = self.sigmoid((t2 - self.t0) / self.tau) # [n2, 2]
+
+        k1_block = self.k1(x1_space, x2_space, diag=diag, **params)
+        k2_block = self.k2(x1_space, x2_space, diag=diag, **params)
+
+        # Handles differences for diag vs not - core idea is same
+        if diag:
+            w1 = w1.squeeze(-1)
+            w2 = w2.squeeze(-1)
+            mix1 = (1 - w1) * (1 - w2)
+            mix2 = w1 * w2
+            cov = mix1 * k1_block + mix2 * k2_block
+        else:
+            mix1 = (1 - w1) * (1 - w2.transpose(-2, -1))
+            mix2 = w1 * w2.transpose(-2, -1)
+            cov = mix1 * k1_block + mix2 * k2_block 
+        return cov
+
+    def sample_hyperparameters(self):
+        if hasattr(self.k1, "sample_hyperparameters"):
+            self.k1.sample_hyperparameters()
+        if hasattr(self.k2, "sample_hyperparameters"):
+            self.k2.sample_hyperparameters()
