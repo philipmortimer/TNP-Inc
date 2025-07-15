@@ -1,0 +1,17 @@
+{
+    "model_names": [
+        "TNP-D",
+        "incTNP",
+        "incTNP-Batched",
+        "incTNP-Batched (Prior)",
+        "CNP",
+        "ConvCNP"
+    ],
+    "trained_ctx_end": 64,
+    "gt_average_ll": 0.012019376041309442,
+    "kernel_name": "Combined Kernel",
+    "npz_path": "experiments/plot_results/lldrift/combined/npz_kernel_Combined Kernel_t0_75_tau_1.0_maxnc_500_ctxstep_1.npz",
+    "folder": "experiments/plot_results/lldrift/combined/",
+    "t0": 75,
+    "tau": 1.0
+}

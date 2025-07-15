@@ -1,0 +1,18 @@
+{
+    "model_names": [
+        "TNP-D",
+        "incTNP",
+        "incTNP-Batched",
+        "incTNP-Batched (Prior)",
+        "LBANP",
+        "CNP",
+        "ConvCNP"
+    ],
+    "trained_ctx_end": 64,
+    "gt_average_ll": 0.013045065962069202,
+    "kernel_name": "RBF Kernel",
+    "npz_path": "experiments/plot_results/lldrift/rbf/npz_kernel_RBF Kernel_t0_100_tau_15.0_maxnc_500_ctxstep_1.npz",
+    "folder": "experiments/plot_results/lldrift/rbf/",
+    "t0": 100,
+    "tau": 15.0
+}
