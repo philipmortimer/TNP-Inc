@@ -272,8 +272,8 @@ def measure_perf_timings():
     # Measure hypers
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 1 # Number of runs to aggregate data over
-    token_step = 250 # How many increments of tokens to go up in
-    min_nt, max_nt = 1, 2003
+    token_step = 50 # How many increments of tokens to go up in
+    min_nt, max_nt = 1, 2002
     dx, dy, m = 1, 1, 1
     nc_start = 1
     num_samples=50 # Samples to unroll in ar_predict

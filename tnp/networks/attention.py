@@ -7,6 +7,7 @@ from check_shapes import check_shapes
 from torch import nn
 from .kv_cache import update_kv_cache
 from .kv_cache_fixed import update_kv_cache_fixed, get_mask_fixed
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
 class BaseMultiHeadAttention(nn.Module, ABC):
