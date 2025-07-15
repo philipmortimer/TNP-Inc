@@ -20,24 +20,26 @@ def np_pred_fn(
     num_samples: int = 1,
     predict_without_yt_tnpa: bool = False, # Used for tnpa to allow teacher forcing by default but support predictions without access to yt
 ) -> torch.distributions.Distribution:
-    if isinstance(model, GriddedConvCNP):
+    unwrapped_model = getattr(model, '_orig_mod', model) # If model is compiled with torch.compile needs to be unwrapped
+
+    if isinstance(unwrapped_model, GriddedConvCNP):
         assert isinstance(batch, ImageBatch)
         pred_dist = model(mc=batch.mc_grid, y=batch.y_grid, mt=batch.mt_grid)
-    elif isinstance(model, ConditionalNeuralProcess):
+    elif isinstance(unwrapped_model, ConditionalNeuralProcess):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt)
-    elif isinstance(model, LatentNeuralProcess):
+    elif isinstance(unwrapped_model, LatentNeuralProcess):
         pred_dist = model(
             xc=batch.xc, yc=batch.yc, xt=batch.xt, num_samples=num_samples
         )
-    elif isinstance(model, ARConditionalNeuralProcess):
+    elif isinstance(unwrapped_model, ARConditionalNeuralProcess):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
-    elif isinstance(model, ARTNPNeuralProcess):
+    elif isinstance(unwrapped_model, ARTNPNeuralProcess):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt, predict_without_yt_tnpa=predict_without_yt_tnpa)
-    elif isinstance(model, BatchedCausalTNP):
+    elif isinstance(unwrapped_model, BatchedCausalTNP):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
-    elif isinstance(model, BatchedCausalTNPPrior):
+    elif isinstance(unwrapped_model, BatchedCausalTNPPrior):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt, yt=batch.yt)
-    elif isinstance(model, GPStream):
+    elif isinstance(unwrapped_model, GPStream):
         pred_dist = model(xc=batch.xc, yc=batch.yc, xt=batch.xt)
     else:
         raise ValueError

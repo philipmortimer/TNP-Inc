@@ -1,0 +1,44 @@
+Traceback (most recent call last):
+  File "/rds/user/pm846/hpc-work/Thesis/TNP-Inc/experiments/arnp.py", line 8, in <module>
+    from tnp.utils.np_functions import np_pred_fn
+  File "/rds/user/pm846/hpc-work/Thesis/TNP-Inc/tnp/utils/np_functions.py", line 4, in <module>
+    from ..data.base import Batch, ImageBatch
+  File "/rds/user/pm846/hpc-work/Thesis/TNP-Inc/tnp/data/base.py", line 7, in <module>
+    import pytorch_lightning as pl
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pytorch_lightning/__init__.py", line 27, in <module>
+    from pytorch_lightning.callbacks import Callback  # noqa: E402
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pytorch_lightning/callbacks/__init__.py", line 14, in <module>
+    from pytorch_lightning.callbacks.batch_size_finder import BatchSizeFinder
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pytorch_lightning/callbacks/batch_size_finder.py", line 26, in <module>
+    from pytorch_lightning.callbacks.callback import Callback
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pytorch_lightning/callbacks/callback.py", line 22, in <module>
+    from pytorch_lightning.utilities.types import STEP_OUTPUT
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pytorch_lightning/utilities/types.py", line 41, in <module>
+    from torchmetrics import Metric
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/torchmetrics/__init__.py", line 26, in <module>
+    from torchmetrics import functional  # noqa: E402
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/torchmetrics/functional/__init__.py", line 14, in <module>
+    from torchmetrics.functional.audio._deprecated import _permutation_invariant_training as permutation_invariant_training
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/torchmetrics/functional/audio/__init__.py", line 49, in <module>
+    if _PYSTOI_AVAILABLE:
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/lightning_utilities/core/imports.py", line 164, in __bool__
+    self._check_available()
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/lightning_utilities/core/imports.py", line 158, in _check_available
+    self._check_requirement()
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/lightning_utilities/core/imports.py", line 132, in _check_requirement
+    pkg_resources.require(self.requirement)
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pkg_resources/__init__.py", line 1066, in require
+    needed = self.resolve(parse_requirements(requirements))
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pkg_resources/__init__.py", line 893, in resolve
+    dist = self._resolve_dist(
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pkg_resources/__init__.py", line 922, in _resolve_dist
+    env = Environment(self.entries)
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pkg_resources/__init__.py", line 1166, in __init__
+    self.scan(search_path)
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pkg_resources/__init__.py", line 1198, in scan
+    for dist in find_distributions(item):
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pkg_resources/__init__.py", line 2339, in find_on_path
+    yield from factory(fullpath)
+  File "/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/pkg_resources/__init__.py", line 2396, in distributions_from_metadata
+    if len(os.listdir(path)) == 0:
+KeyboardInterrupt

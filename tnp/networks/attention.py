@@ -70,9 +70,10 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         if kv_tag is None: # KV caching not used if no tag provided
             k, v = k_new, v_new
         else:
+            mask, use_causal = None, False # Enables Flash for KV case
             if use_fixed_kv:
                 k, v = update_kv_cache_fixed(k_new, v_new, kv_cache, kv_tag)
-                if kv_cache is not None and kv_tag is not None:
+                if False and kv_cache is not None and kv_tag is not None:
                     m, _, k_len, _ = k.shape
                     _, _, q_len, _ = q.shape
                     mask = get_mask_fixed(kv_cache, q_len, k_len)
@@ -80,7 +81,7 @@ class BaseMultiHeadAttention(nn.Module, ABC):
             else:
                 k, v = update_kv_cache(k_new, v_new, kv_cache, kv_tag)
                 # Loads cached mask in case of KV caching - https://github.com/pytorch/pytorch/issues/144858
-                if kv_cache is not None and  kv_tag is not None:
+                if False and kv_cache is not None and  kv_tag is not None:
                     m, _, k_len, _ = k.shape
                     _, _, q_len, _ = q.shape
                     mask = torch.tril(torch.ones(k_len, k_len, dtype=torch.bool, device=k.device))[-q_len:]
@@ -97,6 +98,7 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         if self.linear:
             out = linear_attention(q, k, v, attn_mask=mask, scale=self.scale)
         else:
+            #with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
             out = nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
                 q, k, v, attn_mask=mask, scale=self.scale, is_causal=use_causal
             )
