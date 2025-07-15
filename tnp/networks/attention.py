@@ -7,6 +7,7 @@ from check_shapes import check_shapes
 from torch import nn
 from .kv_cache import update_kv_cache
 from .kv_cache_fixed import update_kv_cache_fixed, get_mask_fixed
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
 class BaseMultiHeadAttention(nn.Module, ABC):
@@ -97,9 +98,10 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         if self.linear:
             out = linear_attention(q, k, v, attn_mask=mask, scale=self.scale)
         else:
-            out = nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
-                q, k, v, attn_mask=mask, scale=self.scale, is_causal=use_causal
-            )
+            with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+                out = nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
+                    q, k, v, attn_mask=mask, scale=self.scale, is_causal=use_causal
+                )
 
         out = einops.rearrange(out, "m h n d -> m n (h d)")
         out = self.to_out(out)
