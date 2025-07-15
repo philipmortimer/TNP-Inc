@@ -14,6 +14,7 @@ import matplotlib
 from tqdm import tqdm
 from arnp import ar_loglik
 import json
+import gpytorch
 
 
 
@@ -102,7 +103,7 @@ def get_model_list_combined():
     # Return
     models_combined = models_plain + models_ar + models_a
     model_cust = [tnp_plain, incTNP, batchedTNP, priorBatched, inctnpa, tnpa, ar_tnp, ar_inctnp, ar_batchedtnp, ar_priorbatched, ar_cnp, cnp]
-    return [tnp_plain, incTNP]
+    return models_plain
 
 def get_model_list_rbf():
     # List of models to compare trained on rbf kernel
@@ -114,11 +115,13 @@ def get_model_list_rbf():
         'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'incTNP-Batched', False)
     priorBatched = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
         'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'incTNP-Batched (Prior)', False)
+    lbanp = ('experiments/configs/synthetic1dRBF/gp_lbanp_rangesame.yml',
+        'pm846-university-of-cambridge/lbanp-rbf-rangesame/model-suwm25ys:v200', 'LBANP', False)
     cnp = ('experiments/configs/synthetic1dRBF/gp_cnp_rangesame.yml',
         'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP', False)
     conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
         'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP', False)
-    models_plain = [tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
+    models_plain = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
     # TNP-A Class models
     inctnpa = ('experiments/configs/synthetic1dRBF/gp_inctnpa_rangesame.yml',
         'pm846-university-of-cambridge/inctnpa-rbf-rangesame/model-5ob47t8l:v199', "incTNP-A", False)
@@ -142,17 +145,21 @@ def get_model_list_rbf():
     # Return
     models_combined = models_plain + models_ar + models_a
     model_cust = [tnp_plain, incTNP, batchedTNP, priorBatched, inctnpa, tnpa, ar_tnp, ar_inctnp, ar_batchedtnp, ar_priorbatched, ar_cnp, cnp]
-    return [tnp_plain, batchedTNP, ar_priorbatched, incTNP, ar_batchedtnp, inctnpa, tnpa, cnp]
+    return models_plain
 
 
 def drift_stream_data_test_rbf():
     # Hypers
-    t0_tau_list = [(50, 0)]
-    burn_in = 1
+    t_0_vals = [2, 10, 20, 65, 75, 100, 200, 400]
+    tau_vals = [0, 0.5, 1.0, 2.0, 4.0, 5.0, 7.5, 10.0, 15.0, 20.0]
+
+    t0_tau_list = [(t0, tau) for t0 in t_0_vals for tau in tau_vals]
+    print(t0_tau_list)
+    burn_in = 0
     aggregate_over = 1
     batch_size = 16
-    max_batches = 2 # Set to None for no limit
-    max_nc = 150
+    max_batches = 4 # Set to None for no limit
+    max_nc = 500
     nt = 128
     start_ctx = 1
     end_ctx = max_nc
@@ -166,12 +173,16 @@ def drift_stream_data_test_rbf():
 
 def drift_stream_data_test_combined():
     # Hypers
-    t0_tau_list = [(50, 0)]
-    burn_in = 1
+    t_0_vals = [2, 10, 20, 65, 75, 100, 200, 400]
+    tau_vals = [0, 0.5, 1.0, 2.0, 4.0, 5.0, 7.5, 10.0, 15.0, 20.0]
+
+    t0_tau_list = [(t0, tau) for t0 in t_0_vals for tau in tau_vals]
+    print(t0_tau_list)
+    burn_in = 0
     aggregate_over = 1
     batch_size = 16
-    max_batches = 2 # Set to None for no limit
-    max_nc = 100
+    max_batches = 4 # Set to None for no limit
+    max_nc = 500
     nt = 128
     start_ctx = 1
     end_ctx = max_nc
@@ -195,6 +206,45 @@ def drift_stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_
     condition_time_list = np.zeros((len(models), len(ctx), len(data), aggregate_over))
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
     gt_lls = np.zeros(len(data))
+
+    # Caches expensive moving ll calcs to save O(model) repeats - could do this one level higher at data level to save calls for different runs with same data
+    yt_curr_cache = [[None for _ in range(len(ctx))] for _ in range(len(data))] # Empty 2d list
+    for batch_idx, batch in tqdm(enumerate(data), desc="Generating GP data"):
+        if max_batches is not None and batch_idx >= max_batches: break
+        # Moves batch to gpu
+        batch.xc, batch.yc, batch.xt, batch.yt = batch.xc.to(device), batch.yc.to(device), batch.xt.to(device), batch.yt.to(device)
+        xc_ll, yc_ll, xt_ll, yt_ll = batch.xc, batch.yc, batch.xt, batch.yt
+        xc, xt, yc, yt = xc_ll[..., :-1], xt_ll[..., :-1], yc_ll, yt_ll
+        m, nt, _ = yt.shape
+
+        for ctx_idx, ctx_upper in enumerate(ctx):
+            batch.gt_pred._result_cache = None # Clears cache - slow but now used for changing kernel
+
+            t_stamp = torch.full_like(xt[..., :1], ctx_upper, device=device)
+            xt_curr = torch.cat([xt, t_stamp], dim=-1)
+
+            xc_sub, yc_sub = xc_ll[:, :ctx_upper, :], yc_ll[:, :ctx_upper, :]
+
+            yt_samples = []
+            ll_sum = 0
+            for task in range(m):
+                gp_model = GPRegressionModel(likelihood=batch.gt_pred.likelihood, kernel=batch.gt_pred.kernel, 
+                    train_inputs=xc_sub[task], train_targets=yc_sub[task, ..., 0]).to(device)
+                gp_model.eval()
+                gp_model.likelihood.eval()
+                with gpytorch.settings.fast_pred_var(True):
+                    dist_task = gp_model.likelihood.marginal(gp_model(xt_curr[task])) 
+
+                y_task = dist_task.rsample()
+                yt_samples.append(y_task.unsqueeze(0))
+                ll_sum += dist_task.log_prob(y_task).sum().item()
+            yt_curr = torch.cat(yt_samples, dim=0).unsqueeze(-1)
+            gt_ll_curve[ctx_idx, batch_idx] = ll_sum / (m * nt)
+            dy = yt_curr.shape[-1]
+            # Caches results
+            yt_curr_cache[batch_idx][ctx_idx] = yt_curr
+
+    # Main model calculation loop
     for model_idx, (model_yml, model_wab, model_name, use_ar) in enumerate(models):
         model = get_model(model_yml, model_wab, seed=False, device=device)
         model.eval()
@@ -208,30 +258,7 @@ def drift_stream_data_test(dataset, models, max_nc, nt, start_ctx, end_ctx, ctx_
             m, nt, _ = yt.shape
             if is_model_inc: model.init_inc_structs(m=m, max_nc=max_nc, device=device)
             for ctx_idx, ctx_upper in enumerate(ctx):
-                batch.gt_pred._result_cache = None # Clears cache - slow but now used for changing kernel
-
-                t_stamp = torch.full_like(xt[..., :1], ctx_upper, device=device)
-                xt_curr = torch.cat([xt, t_stamp], dim=-1)
-
-                xc_sub, yc_sub = xc_ll[:, :ctx_upper, :], yc_ll[:, :ctx_upper, :]
-
-                # Samples correct yts for the current kernel blend
-                yt_samples = []
-                ll_sum = 0
-                for task in range(m):
-                    gp_model = GPRegressionModel(likelihood=batch.gt_pred.likelihood, kernel=batch.gt_pred.kernel, 
-                        train_inputs=xc_sub[task], train_targets=yc_sub[task, ..., 0]).to(device)
-                    gp_model.eval()
-                    gp_model.likelihood.eval()
-
-                    dist_task = gp_model.likelihood.marginal(gp_model(xt_curr[task])) 
-
-                    y_task = dist_task.rsample()
-                    yt_samples.append(y_task.unsqueeze(0))
-                    ll_sum += dist_task.log_prob(y_task).sum().item()
-                yt_curr = torch.cat(yt_samples, dim=0).unsqueeze(-1)
-                gt_ll_curve[ctx_idx, batch_idx] = ll_sum / (m * nt)
-                dy = yt_curr.shape[-1]
+                yt_curr = yt_curr_cache[batch_idx][ctx_idx]
 
                 # Does model burn in and aggregation
                 for j in range(burn_in + aggregate_over):
@@ -383,4 +410,14 @@ def plot_saved_info_drift(json_path):
 
 if __name__ == "__main__":
     #plot_saved_info_drift("experiments/plot_results/lldrift/rbf/json_RBF Kernel_t0_50_tau_0_maxnc_100_ctxstep_1.json")
-    drift_stream_data_test_rbf()
+    #drift_stream_data_test_rbf()
+    #drift_stream_data_test_combined()
+    run_rbf_first = True
+    if run_rbf_first:
+        print("Running rbf first")
+        drift_stream_data_test_rbf()
+        drift_stream_data_test_combined()
+    else:
+        print("Running combined first")
+        drift_stream_data_test_combined()
+        drift_stream_data_test_rbf()
