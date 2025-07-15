@@ -412,7 +412,7 @@ if __name__ == "__main__":
     #plot_saved_info_drift("experiments/plot_results/lldrift/rbf/json_RBF Kernel_t0_50_tau_0_maxnc_100_ctxstep_1.json")
     #drift_stream_data_test_rbf()
     #drift_stream_data_test_combined()
-    run_rbf_first = True
+    run_rbf_first = False
     if run_rbf_first:
         print("Running rbf first")
         drift_stream_data_test_rbf()
