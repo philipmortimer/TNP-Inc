@@ -20,7 +20,6 @@ import os
 import matplotlib.pyplot as plt
 import matplotlib
 
-
 matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
 matplotlib.rcParams["axes.titlesize"]= 14
@@ -169,7 +168,6 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     # Permutes to [m, nt, dy, num_samples]
     yt_preds_mean = yt_preds_mean.permute(1,2,3,0)
     yt_preds_std  = yt_preds_std.permute(1,2,3,0)
-
     mix  = td.Categorical(torch.full((m, nt, dy, num_samples), 1.0 / num_samples, device=device_ret))
     comp = td.Normal(yt_preds_mean.to(device_ret), yt_preds_std.to(device_ret))
     approx_dist = td.MixtureSameFamily(mix, comp)
@@ -271,45 +269,38 @@ def measure_perf_timings():
     # Measure hypers
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 1 # Number of runs to aggregate data over
-    token_step = 500 # How many increments of tokens to go up in
-    min_nt, max_nt = 1, 2003
+    token_step = 50 # How many increments of tokens to go up in
+    min_nt, max_nt = 1, 5001
     dx, dy, m = 1, 1, 1
     nc_start = 1
     num_samples=50 # Samples to unroll in ar_predict
     device = "cuda"
     order="random"
-    prioritise_fixed = True
+    prioritise_fixed = False
     plot_name_folder = "experiments/plot_results/ar/perf/"
-    data_type = torch.float16 # Need for flash attention
     # End of measure hypers
     models = get_model_list()
     max_high = 2
-    xc = (torch.rand((m, nc_start, dx), device=device, dtype=data_type) * max_high * 2) - max_high
-    yc = (torch.rand((m, nc_start, dy), device=device, dtype=data_type) * max_high * 2) - max_high
+    xc = (torch.rand((m, nc_start, dx), device=device) * max_high * 2) - max_high
+    yc = (torch.rand((m, nc_start, dy), device=device) * max_high * 2) - max_high
     target_sizes = np.arange(start=min_nt, stop=max_nt, step=token_step, dtype=int)
     runtime = np.zeros((len(models), aggregate_over, len(target_sizes)))
     memory = np.zeros((len(models), aggregate_over, len(target_sizes)))
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
     for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
         model = get_model(model_yml, model_wab, seed=False, device=device)
-        #model = torch.compile(model)
         model.eval() 
         for t_index, nt in tqdm(enumerate(target_sizes), desc=f'Targ {model_name}'):
-            xt = (torch.rand((m, nt, dx), device=device, dtype=data_type) * max_high * 2) - max_high
-            yt = (torch.rand((m, nt, dy), device=device, dtype=data_type) * max_high * 2) - max_high
+            xt = (torch.rand((m, nt, dx), device=device) * max_high * 2) - max_high
+            yt = (torch.rand((m, nt, dy), device=device) * max_high * 2) - max_high
 
             for j in range(burn_in + aggregate_over):
                 torch.cuda.reset_peak_memory_stats()
                 torch.cuda.synchronize()
                 starter.record()
-                if model_name == "ConvCNP" or model_name == "CNP": # NO SDPA flash
-                    with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.float32):
-                        pred_dist = ar_predict(model=model, xc=xc, yc=yc, xt=xt, order=order, num_samples=num_samples,
-                            device=device, device_ret=device, prioritise_fixed=prioritise_fixed)
-                else:
-                    with torch.no_grad(), torch.autocast(device_type=device, dtype=data_type), torch.backends.cuda.sdp_kernel(enable_flash=True, enable_math=False, enable_mem_efficient=False):
-                        pred_dist = ar_predict(model=model, xc=xc, yc=yc, xt=xt, order=order, num_samples=num_samples,
-                            device=device, device_ret=device, prioritise_fixed=prioritise_fixed)
+                with torch.no_grad():
+                    pred_dist = ar_predict(model=model, xc=xc, yc=yc, xt=xt, order=order, num_samples=num_samples,
+                        device=device, device_ret=device, prioritise_fixed=prioritise_fixed)
                 # Measures time and memory
                 ender.record()
                 torch.cuda.synchronize()
@@ -370,8 +361,7 @@ def plot_ar_unrolls():
             os.makedirs(model_folder)
         for sample in no_samples:
             def pred_fn_pred(model, batch, predict_without_yt_tnpa=True):
-                with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.float16), torch.backends.cuda.sdp_kernel(enable_flash=True, enable_math=False, enable_mem_efficient=False):
-                    return ar_predict(model, batch.xc, batch.yc, batch.xt, order, sample, device=device)
+                return ar_predict(model, batch.xc, batch.yc, batch.xt, order, sample, device=device)
 
             plot(model=model, batches=data, num_fig=min(no_kernels, len(data)), name=model_folder+f"/ns_{sample}_od_{order}",
                 savefig=True, logging=False, pred_fn=pred_fn_pred, x_range = (-2.0, 2.0),
@@ -417,7 +407,7 @@ def get_model_list():
     conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
         'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
     models = [tnp_plain, incTNP, batchedTNP, priorBatched, conv_cnp, cnp]
-    models = [tnp_plain, priorBatched , conv_cnp, cnp]
+    models = [tnp_plain, incTNP, conv_cnp, cnp]
     return models
 
 # Compares NP models in AR mode on RBF set
@@ -448,7 +438,6 @@ def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
 
 if __name__ == "__main__":
     #plot_rmse_predict_vs_time()
-    print(torch.version.cuda)
     measure_perf_timings()
     #plot_ar_unrolls()
     #compare_rbf_models(base_out_txt_file="experiments/plot_results/ar/ar_rbf_comp")
