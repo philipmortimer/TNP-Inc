@@ -99,10 +99,10 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         if self.linear:
             out = linear_attention(q, k, v, attn_mask=mask, scale=self.scale)
         else:
-            #with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
-            out = nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
-                q, k, v, attn_mask=mask, scale=self.scale, is_causal=use_causal
-            )
+            with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+                out = nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
+                    q, k, v, attn_mask=mask, scale=self.scale, is_causal=use_causal
+                )
 
         out = einops.rearrange(out, "m h n d -> m n (h d)")
         out = self.to_out(out)
