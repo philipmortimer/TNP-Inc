@@ -21,6 +21,7 @@ from itertools import cycle
 import random
 from tnp.utils.np_functions import np_pred_fn
 from tnp.models.gp_online import GPStreamRBF
+from tnp.models.gp_stream import GPStreamSparseWrapperRBF
 from tnp.data.base import Batch
 from matplotlib.ticker import LogFormatterMathtext
 from tnp.models.tnpa import TNPA
@@ -370,9 +371,17 @@ def plot_models_setup_rbf_same():
     models_gp_expanding = [gp_streamed_expanding_4, gp_streamed_expanding_8, gp_streamed_expanding_16]
     models_gp_sliding = [gp_streamed_sliding_4, gp_streamed_sliding_8, gp_streamed_sliding_16]
 
+    gp_sparse_name = "Streamed Sparse GP"
+    gp_sparse_1 = ["", "", gp_sparse_name, 1, ""]
+    gp_sparse_2 = ["", "", gp_sparse_name, 2, ""]
+    gp_sparse_4 = ["", "", gp_sparse_name, 4, ""]
+    gp_sparse_8 = ["", "", gp_sparse_name, 8, ""]
+    gp_sparse_16 = ["", "", gp_sparse_name, 16, ""]
+    gp_sparse_32 = ["", "", gp_sparse_name, 32, ""]
+
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_gp + models_ar
-    return models_gp_expanding
+    return [gp_sparse_16, gp_sparse_32]
 
 def extract_vars_from_folder_name(folder_name):
     patterns = {
@@ -522,7 +531,7 @@ def plot_from_folder(folder):
 # Attempts to recreate something like figure 2. Use plot_models_setup as helper for this func.
 def gather_stats_models(helper_tuple, base_folder_name):
     # Exchange hyperparams
-    nc, nt = 16, 128 
+    nc, nt = 32, 128 
     samples_per_epoch = 4096 # How many datapoints in datasets
     no_permutations=64
     batch_size = 128
@@ -568,6 +577,10 @@ def gather_stats_models(helper_tuple, base_folder_name):
             model = get_model(mod_cptk, mod_yml)
             model.num_samples = mod_data[3]
             model.eval()
+        elif model_name == "Streamed Sparse GP":
+            _, _, _, chunk_size, _ = mod_data
+            model = GPStreamSparseWrapperRBF(num_inducing=nc, chunk_size=chunk_size)
+            use_torch_grad = True
         else:
             model = get_model(mod_cptk, mod_yml)
             model.eval()
