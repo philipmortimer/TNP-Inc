@@ -240,7 +240,7 @@ class GPStreamSparseWrapperRBF(nn.Module):
             Kaa_old = kernel(inducing_variable).evaluate().detach()
             Z_old = inducing_variable.detach().clone()
 
-            optimizer = torch.optim.Adam([
+            optimiser = torch.optim.Adam([
                 {'params': kernel.parameters()},
                 {'params': inducing_variable},
                 {'params': noise_param},
@@ -264,13 +264,12 @@ class GPStreamSparseWrapperRBF(nn.Module):
                         device=self.device, dtype=self.dtype
                     )
                     
-                    optimizer.zero_grad()
+                    optimiser.zero_grad()
                     loss = -model_step.maximum_log_likelihood_objective()
-                    print(f'{loss} - {learn_step}/{self.num_steps}')
+                    if False: print(f'{loss} - {learn_step}/{self.num_steps}')
                     loss.backward()
-                    optimizer.step()
+                    optimiser.step()
 
-                    #optimizer.param_groups.pop()
 
                 # Updates the old states so next chunk can use posterior
                 with torch.no_grad():

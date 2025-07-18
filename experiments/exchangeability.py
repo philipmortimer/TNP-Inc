@@ -123,7 +123,11 @@ def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
                 # Computes marg (ie takes diagonal)
                 pred_dist = pred_dist.to_data_independent_dist()
                 pred_dist = td.Normal(loc=pred_dist.mean.unsqueeze(-1), scale=pred_dist.stddev.unsqueeze(-1)) # Expands for dy=1 term
-            log_p_chunk = pred_dist.log_prob(chunk_yt)
+            # Handles MVN
+            if isinstance(pred_dist, torch.distributions.MultivariateNormal):
+                log_p_chunk = pred_dist.log_prob(chunk_yt.squeeze(-1))
+            else:
+                log_p_chunk = pred_dist.log_prob(chunk_yt).sum(dim=(-1, -2))
             all_log_probs.append(log_p_chunk)
 
             # Delete unused datastraight away - probably excessive but just to be sure
@@ -139,7 +143,8 @@ def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
         #if is_gp_model:
         #    log_probs = log_probs.view(K, m) # [K, m]
         
-        log_probs = log_probs.sum(dim=(-1, -2)).view(K, m)  # sums over nt and dy [K, m]
+        #log_probs = log_probs.sum(dim=(-1, -2)).view(K, m)  # sums over nt and dy [K, m]
+        log_probs = log_probs.view(K, m)
 
         variance = log_probs.var(dim=0, unbiased=True) # Variance over K - this is Var_PI from eq 5 in paper (this gives [m])
         m_var_val = variance.mean().item() # Mean over m batches sampled from D^(n) - ie the monte-carlo approximation of the expectation
@@ -343,7 +348,7 @@ def get_plot_rbf(nc, nt, samples_per_epoch, batch_size):
 def plot_models_setup_rbf_same():
     # Defines each model
     tnp_plain = ['experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', "TNP-D"]
-    inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200', "incTNP"]
+    inc_tnp = ['experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200', "incTNP"]
     inc_tnp_batched=['experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml', 'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', "incTNP-Batched"]
     models_tnp = [tnp_plain, inc_tnp, inc_tnp_batched]
 
@@ -381,7 +386,8 @@ def plot_models_setup_rbf_same():
 
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_gp + models_ar
-    return [gp_sparse_16, gp_sparse_32]
+    #return [tnp_plain, inc_tnp, inc_tnp_batched, gp_streamed_expanding_16, gp_streamed_expanding_32]
+    return [gp_streamed_expanding_16, gp_streamed_expanding_32]
 
 def extract_vars_from_folder_name(folder_name):
     patterns = {
@@ -538,7 +544,7 @@ def gather_stats_models(helper_tuple, base_folder_name):
     use_autoreg_eq=False
     max_samples=samples_per_epoch
     return_samples=max_samples # essentially return as many as possible (but one per batch)
-    skip_existing_folders = True # Skips existing file writes - no need to do work again
+    skip_existing_folders = False # Skips existing file writes - no need to do work again
     # End of hypers
 
     (models) = helper_tuple
@@ -560,6 +566,9 @@ def gather_stats_models(helper_tuple, base_folder_name):
             model_name_fmt = model_name + gp_ext+ f' (ch={chunk_size})'
         elif model_name == "TNP-A":
             model_name_fmt = model_name + f' ({mod_data[3]} samples)'
+        elif model_name == "Streamed Sparse GP":
+            _, _, name_base, chunk_size, strat = mod_data
+            model_name_fmt = model_name + f' (ch={chunk_size})'
         else: model_name_fmt = model_name
         print(model_name_fmt)
 

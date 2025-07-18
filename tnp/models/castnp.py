@@ -46,7 +46,7 @@ class TNPEncoderMasked(nn.Module):
         #m, nc, _ = xc.shape # Number of context points
         #causal_mask = nn.Transformer.generate_square_subsequent_mask(nc, device=zc.device)
         #causal_mask = causal_mask.unsqueeze(0).expand(m, -1, -1).contiguous() # [m, nc, nc]
-        zt = self.transformer_encoder(zc, zt)
+        zt = self.transformer_encoder(zc, zt, use_causal=True)
         return zt
 
 
