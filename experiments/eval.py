@@ -5,10 +5,7 @@ import wandb
 from tnp.utils.experiment_utils import initialize_evaluation
 
 
-def main():
-    experiment = initialize_evaluation()
-
-    lit_model = experiment.lit_model
+def test_gp_model(lit_model, experiment):
     eval_name = experiment.misc.eval_name
     gen_test = experiment.generators.test
 
@@ -47,6 +44,13 @@ def main():
             wandb.run.summary[f"test/{eval_name}/std_gt_loglik"] = test_result[
                 "std_gt_loglik"
             ]
+
+def main():
+    experiment = initialize_evaluation()
+
+    lit_model = experiment.lit_model
+
+    test_gp_model(lit_model, experiment)
 
 
 if __name__ == "__main__":

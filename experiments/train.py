@@ -10,6 +10,8 @@ import wandb
 from tnp.utils.data_loading import adjust_num_batches
 from tnp.utils.experiment_utils import initialize_experiment
 from tnp.utils.lightning_utils import LitWrapper, LogPerformanceCallback
+from tnp.daa.hadISD import HadISDDataGenerator
+from .eval import test_gp_model
 
 
 def main():
@@ -20,6 +22,8 @@ def main():
     gen_val = experiment.generators.val
     optimiser = experiment.optimiser(model.parameters())
     epochs = experiment.params.epochs
+
+    is_hadISD_train = isinstance(gen_train, HadISDDataGenerator) # Assumes that training is either GP or hadISD
 
     train_loader = torch.utils.data.DataLoader(
         gen_train,
@@ -54,7 +58,7 @@ def main():
         pin_memory=True,
     )
 
-    def plot_fn(model, batches, name):
+    def plot_fn_gp(model, batches, name):
         is_training = model.training
         model.eval()
         # Calculates plot range
@@ -68,6 +72,11 @@ def main():
             x_range = (min_tgt, max_tgt)
         )
         if is_training: model.train()
+
+    def plot_fn_hadISD(model, batches, name):
+        print("Implement me") #TODO
+
+    plot_fn = plot_fn_hadISD if is_hadISD_train else plot_fn_gp
 
     if experiment.misc.resume_from_checkpoint is not None:
         api = wandb.Api()
@@ -130,6 +139,10 @@ def main():
         val_dataloaders=val_loader,
         ckpt_path=ckpt_file,
     )
+
+    print("Running final test on model")
+    if is_hadISD_train: print("IMPLEMENT hadISD test script") # TODO
+    else: test_gp_model(lit_model, experiment)
 
 
 if __name__ == "__main__":

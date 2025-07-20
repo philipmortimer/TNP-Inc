@@ -49,7 +49,7 @@ def process_set_to_test_train_val(SRC_ROOT, DST_ROOT, LAT_BOUNDS, LON_BOUNDS, SP
     con.register("wanted_ids", pa.table({"station_id": pa.array(wanted_ids)}),)
 
     # Loops over train test and val - storing stats for each summary
-    test_stats = {}
+    train_stats = {}
     i = 0
     for split, (y_min, y_max) in SPLITS.items():
         assert (i == 0 and split == "train") or i > 0, "Training must be first split for algo to work"
@@ -88,31 +88,41 @@ def process_set_to_test_train_val(SRC_ROOT, DST_ROOT, LAT_BOUNDS, LON_BOUNDS, SP
             SELECT
                min(temperature) AS t_min,
                max(temperature) AS t_max,
+               avg(temperature) AS t_av,
+               stddev_pop(temperature) AS t_std,
                min(elevation) AS e_min,
                max(elevation) AS e_max,
+               avg(elevation) AS e_av,
+               stddev_pop(elevation) AS e_std,
                count(*) AS n_rows
             FROM read_parquet('{dst_file}')
         """).fetchone()
+
+        t_min, t_max, t_av, t_std, e_min, e_max, e_av, e_std, n_rows = stats
 
         summary = {
             "lat_range": LAT_BOUNDS,
             "lon_range": LON_BOUNDS,
             "years_covered": f"{y_min or '-infinity'}-{y_max or '+infinity'}",
             "no_stations": len(wanted_ids),
-            "no_readings": int(stats[4]),
+            "no_readings": int(n_rows),
         }
 
         # Adds train min and max to all results to all for normalisation across the different files regardless of true ranges
         if split == "train":
             summary.update({
-                "min_temp_train": float(stats[0]),
-                "max_temp_train": float(stats[1]),
-                "min_elev_train": float(stats[2]),
-                "max_elev_train": float(stats[3]),
+                "min_temp_train": float(t_min),
+                "max_temp_train": float(t_max),
+                "mean_temp_train": float(t_av),
+                "std_temp_train": float(t_std),
+                "min_elev_train": float(e_min),
+                "max_elev_train": float(e_max),
+                "mean_elev_train": float(e_av),
+                "std_elev_train": float(e_std),
             })
-            test_stats = {k: v for k, v in summary.items() if k.endswith("_train")}
+            train_stats = {k: v for k, v in summary.items() if k.endswith("_train")}
         else:
-            summary.update(test_stats)
+            summary.update(train_stats)
         write_summary(dst_root / split / "summary.txt", summary)
 
         i += 1
