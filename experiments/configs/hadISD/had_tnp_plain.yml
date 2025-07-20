@@ -2,9 +2,8 @@ generators:
   train:
     _target_: tnp.data.hadISD.HadISDDataGenerator
     min_nc: 1
-    max_nc: 2051
-    min_nt: 250
-    max_nt: 250
+    max_nc: 2033
+    nt: 250
     lat_range: ${params.lat_range}
     long_range: ${params.long_range}
     ordering_strategy: ${params.ordering_strategy}
@@ -14,9 +13,8 @@ generators:
   val:
     _target_: tnp.data.hadISD.HadISDDataGenerator
     min_nc: 1
-    max_nc: 2051
-    min_nt: 250
-    max_nt: 250
+    max_nc: 2033
+    nt: 250
     lat_range: ${params.lat_range}
     long_range: ${params.long_range}
     ordering_strategy: ${params.ordering_strategy}
@@ -27,9 +25,8 @@ generators:
   test:
     _target_: tnp.data.hadISD.HadISDDataGenerator
     min_nc: 1
-    max_nc: 2051
-    min_nt: 250
-    max_nt: 250
+    max_nc: 2033
+    nt: 250
     lat_range: ${params.lat_range}
     long_range: ${params.long_range}
     ordering_strategy: ${params.ordering_strategy}
@@ -106,10 +103,14 @@ params:
   norm_first: True
   num_layers: 5
 
+  # Fixed constants known
+  dim_x: 4
+  dim_y: 1
+
   # Data Params - this may need some hand crafted finetuning (rune the pre proc scripts first if changing ranges)
-  lat_range: [[-20.0, 60.0]]
-  long_range: [[-10.0, 52.0]]
-  ordering_strat: "random"
+  lat_range: [-20.0, 60.0]
+  long_range: [-10.0, 52.0]
+  ordering_strategy: "random"
 
   # File paths for specific training resource (adjust for machine)
   train_path: "/scratch/pm846/TNP/data/data_processed/train"
@@ -118,7 +119,7 @@ params:
 
 misc:
   project: plain-tnp-had
-  name: plain-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}-rangelat-${params.lat_range}-rangelon-{params.lon_range}
+  name: plain-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}-rangelat-${params.lat_range}-rangelon-${params.long_range}
   resume_from_checkpoint: null
   gradient_clip_val: 0.5
 

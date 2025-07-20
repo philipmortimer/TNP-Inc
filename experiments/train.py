@@ -10,8 +10,8 @@ import wandb
 from tnp.utils.data_loading import adjust_num_batches
 from tnp.utils.experiment_utils import initialize_experiment
 from tnp.utils.lightning_utils import LitWrapper, LogPerformanceCallback
-from tnp.daa.hadISD import HadISDDataGenerator
-from .eval import test_gp_model
+from tnp.data.hadISD import HadISDDataGenerator
+from eval import test_gp_model
 
 
 def main():
