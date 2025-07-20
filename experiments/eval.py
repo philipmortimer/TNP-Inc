@@ -3,9 +3,10 @@ import torch
 
 import wandb
 from tnp.utils.experiment_utils import initialize_evaluation
+from tnp.utils.data_loading import adjust_num_batches
 
 
-def test_gp_model(lit_model, experiment):
+def test_model(lit_model, experiment, wandb_run=None):
     eval_name = experiment.misc.eval_name
     gen_test = experiment.generators.test
 
@@ -19,7 +20,25 @@ def test_gp_model(lit_model, experiment):
         accelerator="auto",
         logger=False,
     )
-    trainer.test(model=lit_model, dataloaders=gen_test)
+
+    test_loader = torch.utils.data.DataLoader(
+        gen_test,
+        batch_size=None,
+        num_workers=experiment.misc.num_val_workers,
+        worker_init_fn=(
+            (
+                experiment.misc.worker_init_fn
+                if hasattr(experiment.misc, "worker_init_fn")
+                else adjust_num_batches
+            )
+            if experiment.misc.num_val_workers > 0
+            else None
+        ),
+        persistent_workers=True if experiment.misc.num_val_workers > 0 else False,
+        pin_memory=True,
+    )
+
+    trainer.test(model=lit_model, dataloaders=test_loader)
     test_result = {
         k: [result[k] for result in lit_model.test_outputs]
         for k in lit_model.test_outputs[0].keys()
@@ -28,29 +47,49 @@ def test_gp_model(lit_model, experiment):
     test_result["mean_loglik"] = loglik.mean()
     test_result["std_loglik"] = loglik.std() / (len(loglik) ** 0.5)
 
+    # Handles hadISD case
+    if "loglik_temp" in test_result:
+        loglik_temp = torch.stack(test_result["loglik_temp"])
+        test_result["mean_loglik_temp"] = loglik_temp.mean()
+        test_result["std_loglik_temp"] = loglik_temp.std() / (len(loglik_temp) ** 0.5)
+
+        rmse_temp = torch.stack(test_result["rmse_temp"])
+        test_result["mean_rmse_temp"] = rmse_temp.mean()
+        test_result["std_rmse_temp"] = rmse_temp.std() / (len(rmse_temp) ** 0.5)     
+
+
     if "gt_loglik" in test_result:
         gt_loglik = torch.stack(test_result["gt_loglik"])
         test_result["mean_gt_loglik"] = gt_loglik.mean()
         test_result["std_gt_loglik"] = gt_loglik.std() / (len(gt_loglik) ** 0.5)
 
     if experiment.misc.logging:
-        wandb.run.summary["num_params"] = num_params
-        wandb.run.summary[f"test/{eval_name}/loglik"] = test_result["mean_loglik"]
-        wandb.run.summary[f"test/{eval_name}/std_loglik"] = test_result["std_loglik"]
+        summary = wandb.run.summary if wandb_run is None else wandb_run.summary
+        summary["num_params"] = num_params
+        summary[f"test/{eval_name}/loglik"] = test_result["mean_loglik"]
+        summary[f"test/{eval_name}/std_loglik"] = test_result["std_loglik"]
         if "mean_gt_loglik" in test_result:
-            wandb.run.summary[f"test/{eval_name}/gt_loglik"] = test_result[
+            summary[f"test/{eval_name}/gt_loglik"] = test_result[
                 "mean_gt_loglik"
             ]
-            wandb.run.summary[f"test/{eval_name}/std_gt_loglik"] = test_result[
+            summary[f"test/{eval_name}/std_gt_loglik"] = test_result[
                 "std_gt_loglik"
-            ]
+            ]  
+
+        # Handles HadISD case
+        if "loglik_temp" in test_result:
+            summary[f"test/{eval_name}/loglik_temp"] = test_result["mean_loglik_temp"]
+            summary[f"test/{eval_name}/std_loglik_temp"] = test_result["std_loglik_temp"]
+            summary[f"test/{eval_name}/rmse_temp"] = test_result["mean_rmse_temp"]
+            summary[f"test/{eval_name}/std_rmse_temp"] = test_result["std_rmse_temp"]
+
 
 def main():
     experiment = initialize_evaluation()
 
     lit_model = experiment.lit_model
 
-    test_gp_model(lit_model, experiment)
+    test_model(lit_model, experiment)
 
 
 if __name__ == "__main__":

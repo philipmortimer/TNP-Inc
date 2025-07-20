@@ -2,35 +2,35 @@ generators:
   train:
     _target_: tnp.data.hadISD.HadISDDataGenerator
     min_nc: 1
-    max_nc: 2033
+    max_nc: 200 # 2033 is max for certain box
     nt: 250
     lat_range: ${params.lat_range}
     long_range: ${params.long_range}
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 32_000
+    samples_per_epoch: 2_000
     batch_size: 32
     data_directory: ${params.train_path}
   val:
     _target_: tnp.data.hadISD.HadISDDataGenerator
     min_nc: 1
-    max_nc: 2033
+    max_nc: 200
     nt: 250
     lat_range: ${params.lat_range}
     long_range: ${params.long_range}
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 8_192
+    samples_per_epoch: 1_500
     batch_size: 32
     deterministic: True
     data_directory: ${params.val_path}
   test:
     _target_: tnp.data.hadISD.HadISDDataGenerator
     min_nc: 1
-    max_nc: 2033
+    max_nc: 200
     nt: 250
     lat_range: ${params.lat_range}
     long_range: ${params.long_range}
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 64_000
+    samples_per_epoch: 2_000
     batch_size: 32
     deterministic: True
     data_directory: ${params.test_path}
@@ -96,7 +96,7 @@ optimiser:
 
 params:
   # Model + Training Params
-  epochs: 200
+  epochs: 1
   embed_dim: 128
   num_heads: 8
   head_dim: 16
@@ -107,7 +107,7 @@ params:
   dim_x: 4
   dim_y: 1
 
-  # Data Params - this may need some hand crafted finetuning (rune the pre proc scripts first if changing ranges)
+  # Data Params - this may need some hand crafted finetuning (rune the pre proc scripts first if changing ranges). Also this might not always be checked properly so ensure they are correct
   lat_range: [-20.0, 60.0]
   long_range: [-10.0, 52.0]
   ordering_strategy: "random"
@@ -124,7 +124,7 @@ misc:
   gradient_clip_val: 0.5
 
   # Plot misc
-  eval_name: test
+  eval_name: test_eval
   seed: 1
   only_plots: False
   num_plots: 10
@@ -133,3 +133,5 @@ misc:
   logging: True
   plot_interval: 10
   check_val_every_n_epoch: 1
+  checkpoint_interval: 10
+  num_workers: 32

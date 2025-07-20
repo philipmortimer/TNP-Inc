@@ -7,6 +7,8 @@ import torch
 from torch import nn
 
 from ..data.base import Batch
+from ..data.hadISD import HadISDBatch
+from ..data.hadISD import get_true_temp, scale_pred_temp_dist
 from .np_functions import np_loss_fn, np_pred_fn
 
 
@@ -73,6 +75,20 @@ class LitWrapper(pl.LightningModule):
                 "val/gt_loglik", gt_loglik, on_step=False, on_epoch=True, prog_bar=True
             )
 
+        # Handles temperature prediction case -  distribution must be normal but is for the models we use.
+        if isinstance(batch, HadISDBatch):
+            # Reconstructs mean and variance vectors to be the correct units
+            pred_dist_temp = scale_pred_temp_dist(batch, pred_dist)
+            yt_correct_units = get_true_temp(batch, batch.yt)
+
+            # Computes track statistics
+            loglik_temp = pred_dist_temp.log_prob(yt_correct_units).sum() / yt_correct_units[..., 0].numel()
+            rmse_temp = nn.functional.mse_loss(pred_dist_temp.mean, yt_correct_units).sqrt().cpu().mean() 
+
+            self.log("val/loglik_temp", loglik_temp, on_step=False, on_epoch=True, prog_bar=True)
+            self.log("val/rmse_temp", rmse_temp, on_step=False, on_epoch=True, prog_bar=True)
+
+
     def test_step(  # pylint: disable=arguments-differ
         self, batch: Batch, batch_idx: int
     ) -> None:
@@ -92,6 +108,20 @@ class LitWrapper(pl.LightningModule):
             )
             gt_loglik = gt_loglik.sum() / batch.yt[..., 0].numel()
             result["gt_loglik"] = gt_loglik.cpu()
+
+
+        # Handles temperature prediction case -  distribution must be normal but is for the models we use.
+        if isinstance(batch, HadISDBatch):
+            # Reconstructs mean and variance vectors to be the correct units
+            pred_dist_temp = scale_pred_temp_dist(batch, pred_dist)
+            yt_correct_units = get_true_temp(batch, batch.yt)
+
+            # Computes track statistics
+            loglik_temp = pred_dist_temp.log_prob(yt_correct_units).sum() / yt_correct_units[..., 0].numel()
+            rmse_temp = nn.functional.mse_loss(pred_dist_temp.mean, yt_correct_units).sqrt().cpu().mean() 
+
+            result["loglik_temp"] = loglik_temp
+            result["rmse_temp"] = rmse_temp
 
         self.test_outputs.append(result)
 

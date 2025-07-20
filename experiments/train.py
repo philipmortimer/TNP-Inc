@@ -11,7 +11,7 @@ from tnp.utils.data_loading import adjust_num_batches
 from tnp.utils.experiment_utils import initialize_experiment
 from tnp.utils.lightning_utils import LitWrapper, LogPerformanceCallback
 from tnp.data.hadISD import HadISDDataGenerator
-from eval import test_gp_model
+from eval import test_model
 
 
 def main():
@@ -141,8 +141,7 @@ def main():
     )
 
     print("Running final test on model")
-    if is_hadISD_train: print("IMPLEMENT hadISD test script") # TODO
-    else: test_gp_model(lit_model, experiment)
+    test_model(lit_model, experiment, wandb_run=trainer.logger.experiment)
 
 
 if __name__ == "__main__":
