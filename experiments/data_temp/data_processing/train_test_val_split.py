@@ -52,7 +52,7 @@ def process_set_to_test_train_val(SRC_ROOT, DST_ROOT, LAT_BOUNDS, LON_BOUNDS, SP
     test_stats = {}
     i = 0
     for split, (y_min, y_max) in SPLITS.items():
-        assert i == 0 and split == "train", "Training must be first split for algo to work"
+        assert (i == 0 and split == "train") or i > 0, "Training must be first split for algo to work"
         print(f"\n--- {split.upper()} ---")
 
         split_dir = dst_root / split / "data"
