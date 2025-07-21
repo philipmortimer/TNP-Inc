@@ -24,6 +24,7 @@ class FourierEmbedderHadISD(nn.Module):
             l_max = torch.log10(torch.tensor(lambda_max, dtype=torch.float64))
             log_l_i = l_min + i * (l_max - l_min) / (D // 2 - 1)
             grids.append(torch.exp(log_l_i))
+        wave_grid = torch.cat(grids)
         self.register_buffer("wave_grid", wave_grid)
 
         # Stores slice for each feature in

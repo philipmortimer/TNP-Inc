@@ -4,6 +4,7 @@ import lightning.pytorch as pl
 import torch
 from omegaconf import OmegaConf
 from plot import plot
+from plot_hadISD import plot_hadISD
 import numpy as np
 
 import wandb
@@ -74,7 +75,16 @@ def main():
         if is_training: model.train()
 
     def plot_fn_hadISD(model, batches, name):
-        print("Implement me") #TODO
+        is_training = model.training
+        model.eval()
+        plot_hadISD(
+            model=model,
+            batches=batches,
+            num_fig=min(5, len(batches)),
+            name=name,
+            pred_fn=experiment.misc.pred_fn,
+        )
+        if is_training: model.train()
 
     plot_fn = plot_fn_hadISD if is_hadISD_train else plot_fn_gp
 
