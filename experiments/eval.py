@@ -64,24 +64,20 @@ def test_model(lit_model, experiment, wandb_run=None):
         test_result["std_gt_loglik"] = gt_loglik.std() / (len(gt_loglik) ** 0.5)
 
     if experiment.misc.logging:
-        summary = wandb.run.summary if wandb_run is None else wandb_run.summary
-        summary["num_params"] = num_params
-        summary[f"test/{eval_name}/loglik"] = test_result["mean_loglik"]
-        summary[f"test/{eval_name}/std_loglik"] = test_result["std_loglik"]
+        summary = wandb_run.summary() if callable(wandb_run.summary) else wandb_run.summary
+        summary.update({"num_params": num_params})
+        summary.update({f"test/{eval_name}/loglik": test_result["mean_loglik"]})
+        summary.update({f"test/{eval_name}/std_loglik": test_result["std_loglik"]})
         if "mean_gt_loglik" in test_result:
-            summary[f"test/{eval_name}/gt_loglik"] = test_result[
-                "mean_gt_loglik"
-            ]
-            summary[f"test/{eval_name}/std_gt_loglik"] = test_result[
-                "std_gt_loglik"
-            ]  
+            summary.update({f"test/{eval_name}/gt_loglik": test_result["mean_gt_loglik"]})
+            summary.update({f"test/{eval_name}/std_gt_loglik": test_result["std_gt_loglik"]})
 
         # Handles HadISD case
         if "loglik_temp" in test_result:
-            summary[f"test/{eval_name}/loglik_temp"] = test_result["mean_loglik_temp"]
-            summary[f"test/{eval_name}/std_loglik_temp"] = test_result["std_loglik_temp"]
-            summary[f"test/{eval_name}/rmse_temp"] = test_result["mean_rmse_temp"]
-            summary[f"test/{eval_name}/std_rmse_temp"] = test_result["std_rmse_temp"]
+            summary.update({f"test/{eval_name}/loglik_temp": test_result["mean_loglik_temp"]})
+            summary.update({f"test/{eval_name}/std_loglik_temp": test_result["std_loglik_temp"]})
+            summary.update({f"test/{eval_name}/rmse_temp": test_result["mean_rmse_temp"]})
+            summary.update({f"test/{eval_name}/std_rmse_temp": test_result["std_rmse_temp"]})
 
 
 def main():

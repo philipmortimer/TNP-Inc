@@ -227,8 +227,6 @@ def plot_hadISD(
         fig_h.suptitle(title_h)
         save_plot(fig_h, name, i, "H", logging, savefig)
 
-    exit(0)
-
 # Converts number of hours since 1st Jan 1931 into a formatted string
 def convert_time_to_str(unnorm_time: int):
     ZERO_TIME = datetime.datetime(1931, 1, 1)

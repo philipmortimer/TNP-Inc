@@ -13,6 +13,7 @@ from tnp.utils.experiment_utils import initialize_experiment
 from tnp.utils.lightning_utils import LitWrapper, LogPerformanceCallback
 from tnp.data.hadISD import HadISDDataGenerator
 from eval import test_model
+from lightning.pytorch.utilities import rank_zero_only
 
 
 def main():
@@ -110,6 +111,7 @@ def main():
             plot_interval=experiment.misc.plot_interval,
         )
 
+
     if experiment.misc.logging:
         logger = pl.loggers.WandbLogger(
             project=experiment.misc.project,
@@ -122,7 +124,20 @@ def main():
             save_last=True,
         )
         performance_callback = LogPerformanceCallback()
-        callbacks = [checkpoint_callback, performance_callback]
+        # Ensures model is fully evaluated at train end with callback
+        class TestAfterTrainingCallback(pl.Callback):
+            def __init__(self, experiment):
+                super().__init__()
+                self.experiment = experiment
+
+            @rank_zero_only
+            def on_fit_end(self, trainer, pl_module):
+                print("Running final test on model")
+                wandb_run = trainer.logger.experiment
+                test_model(pl_module, self.experiment, wandb_run=wandb_run)
+
+        callbacks = [checkpoint_callback, performance_callback, TestAfterTrainingCallback(experiment)]
+
     else:
         logger = False
         callbacks = None
@@ -142,16 +157,12 @@ def main():
         gradient_clip_val=experiment.misc.gradient_clip_val,
         callbacks=callbacks,
     )
-
     trainer.fit(
         model=lit_model,
         train_dataloaders=train_loader,
         val_dataloaders=val_loader,
         ckpt_path=ckpt_file,
     )
-
-    print("Running final test on model")
-    test_model(lit_model, experiment, wandb_run=trainer.logger.experiment)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ generators:
     max_nc: 2033 # 2033 is max for certain box
     nt: 250
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 32
+    samples_per_epoch: 64
     batch_size: 32
     data_directory: ${params.train_path}
   val:
@@ -14,7 +14,7 @@ generators:
     max_nc: 2033
     nt: 250
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 200
+    samples_per_epoch: 100
     batch_size: 32
     deterministic: True
     data_directory: ${params.val_path}
@@ -24,7 +24,7 @@ generators:
     max_nc: 2033
     nt: 250
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 80_000
+    samples_per_epoch: 400
     batch_size: 32
     deterministic: True
     data_directory: ${params.test_path}
@@ -99,7 +99,7 @@ optimiser:
 
 params:
   # Model + Training Params
-  epochs: 200
+  epochs: 2
   embed_dim: 128
   num_heads: 8
   head_dim: 16
@@ -156,6 +156,6 @@ misc:
   logging: True
   plot_interval: 10
   check_val_every_n_epoch: 1
-  checkpoint_interval: 10
+  checkpoint_interval: 20
   num_workers: 1
-  num_val_workers: 0
+  num_val_workers: 1
