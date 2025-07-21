@@ -68,7 +68,8 @@ def plot_hadISD(
         time = normalise_time(time)
         # Z constaint hack: TODO precache with true values
         z_const_temp = 30.0
-        elevation = np.full(shape=(N_POINTS * N_POINTS), fill_value=z_const_temp) * batch.std_elev + batch.mean_elev
+        z_norm = (z_const_temp - batch.mean_elev) / batch.std_elev
+        elevation = np.full(shape=(N_POINTS * N_POINTS), fill_value=z_norm)
         # Convert stuff to tensors
         lat = torch.tensor(lat_norm.flatten(), device=xc.device, dtype=xc.dtype)
         long = torch.tensor(lon_norm.flatten(),  device=xc.device, dtype=xc.dtype)
@@ -94,7 +95,14 @@ def plot_hadISD(
         yt_pred_dist = scale_pred_temp_dist(batch_pred, yt_pred_dist)
         y_gridded_pred_dist = scale_pred_temp_dist(batch_grid, y_gridded_pred_dist)
         #y_gridded_pred_dist.mean.shape = [1, N_POINTS * N_POINTS, 1]
-        predicted_grid_points = y_gridded_pred_dist.mean.view(N_POINTS, N_POINTS).cpu()
+        predicted_grid_points_shuffled = y_gridded_pred_dist.mean.squeeze(0)
+        # Unshuffles predicted grid distribution points as appropriate
+        if batch.ordering == "random":
+            predicted_grid_points = torch.empty_like(predicted_grid_points_shuffled)
+            predicted_grid_points[indices] = predicted_grid_points_shuffled
+        else:
+            raise ValueError("Unspoorted plotting ordering type")
+        predicted_grid_points = predicted_grid_points.view(N_POINTS, N_POINTS).cpu()
         pred_tgt_points = yt_pred_dist.mean.cpu()
         # Computes NLL
         yt_correct_units = get_true_temp(batch_pred, batch_pred.yt)
@@ -167,9 +175,11 @@ def plot_hadISD(
         # 6) Error
         title_f = f"Prediction Error RMSE={rmse:.3f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
         fig_f, ax_f = init_earth_fig(title_f, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
-        error_pred = true_tgt_points - pred_tgt_points.squeeze(0, -1)
+        error_pred = (true_tgt_points - pred_tgt_points.squeeze(0, -1)).numpy()
         ax_f.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
-        sc = ax_f.scatter(long_tgt, lat_tgt, c=error_pred, s=20, cmap="coolwarm", vmin=error_pred.min(), vmax=error_pred.max())
+        max_abs_error = np.max(np.abs(error_pred))
+        error_norm = matplotlib.colors.TwoSlopeNorm(vcenter=0, vmin=-max_abs_error, vmax=max_abs_error)
+        sc = ax_f.scatter(long_tgt, lat_tgt, c=error_pred, s=20, cmap="seismic", vmin=-max_abs_error, vmax=max_abs_error)
         cbar = fig_f.colorbar(sc, ax=ax_f, orientation="vertical", pad=0.05)
         cbar.set_label("Prediction Error (°C) [True - Predicted]")
         ax_f.legend()
@@ -180,7 +190,7 @@ def plot_hadISD(
         fig_g, ax_g = init_earth_fig(title_g, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
         error_pred = torch.abs(true_tgt_points - pred_tgt_points.squeeze(0, -1))
         ax_g.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
-        sc = ax_g.scatter(long_tgt, lat_tgt, c=error_pred, s=20, cmap="coolwarm", vmin=error_pred.min(), vmax=error_pred.max())
+        sc = ax_g.scatter(long_tgt, lat_tgt, c=error_pred, s=20, cmap="viridis", vmin=error_pred.min(), vmax=error_pred.max())
         cbar = fig_g.colorbar(sc, ax=ax_g, orientation="vertical", pad=0.05)
         cbar.set_label("Absolute Prediction Error (°C)")
         ax_g.legend()
