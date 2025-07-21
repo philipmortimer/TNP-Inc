@@ -24,7 +24,7 @@ class FourierEmbedderHadISD(nn.Module):
             l_max = torch.log10(torch.tensor(lambda_max, dtype=torch.float64))
             log_l_i = l_min + i * (l_max - l_min) / (D // 2 - 1)
             grids.append(torch.exp(log_l_i))
-        self.wave_grid = torch.cat(grids)
+        self.register_buffer("wave_grid", wave_grid)
 
         # Stores slice for each feature in
         self.slices = []
@@ -39,9 +39,6 @@ class FourierEmbedderHadISD(nn.Module):
     def forward(self, x: torch.Tensor):
         m, n, dx = x.shape
         assert dx == len(self.embed_dim_lambdamin_lambda_max), "Mismatch between embed list and feature length"
-
-        # Converts grid to correct device - should only happen once for fast call and then just be correct type
-        self.wave_grid = self.wave_grid.to(device=x.device)
 
         embeds = []
         for i in range(dx):
