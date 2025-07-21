@@ -7,7 +7,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import torch
 from torch import nn
-from tnp.data.hadISD import HadISDBatch, normalise_time, scale_pred_temp_dist
+from tnp.data.hadISD import HadISDBatch, normalise_time, scale_pred_temp_dist, get_true_temp
 from tnp.utils.np_functions import np_pred_fn
 import wandb
 import cartopy.crs as ccrs
@@ -96,9 +96,11 @@ def plot_hadISD(
         #y_gridded_pred_dist.mean.shape = [1, N_POINTS * N_POINTS, 1]
         predicted_grid_points = y_gridded_pred_dist.mean.view(N_POINTS, N_POINTS).cpu()
         pred_tgt_points = yt_pred_dist.mean.cpu()
-        true_tgt_points = batch_pred.yt.squeeze(0, -1).cpu()
         # Computes NLL
-        nll = -yt_pred_dist.log_prob(batch_pred.yt).sum() / batch_pred.yt[..., 0].numel()
+        yt_correct_units = get_true_temp(batch_pred, batch_pred.yt)
+        true_tgt_points = yt_correct_units.squeeze(0, -1).cpu()
+        nll = -yt_pred_dist.log_prob(yt_correct_units).sum() / yt_correct_units[..., 0].numel()
+        rmse = nn.functional.mse_loss(yt_pred_dist.mean, yt_correct_units).sqrt().cpu().mean() 
         _, nc, _ = batch_pred.xc.shape
         _, nt, _ = batch_pred.xt.shape
         # Converts points to true long / lat value and to cpu for for plotting
@@ -148,6 +150,41 @@ def plot_hadISD(
         cbar.set_label("Predicted Temperature (°C)")
         ax_d.legend()
         save_plot(fig_d, name, i, "D", logging, savefig)
+
+        # 5) Show true target station readings
+        title_e = f"Recorded Temperature NC={nc} - {batch_time_str}"
+        fig_e, ax_e = init_earth_fig(title_e, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        # Consistent colour scheme between true and predicted points range
+        vmin = min(pred_tgt_points.min(), true_tgt_points.min())
+        vmax = max(pred_tgt_points.max(), true_tgt_points.max())
+        ax_e.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
+        sc = ax_e.scatter(long_tgt, lat_tgt, c=true_tgt_points, s=20, cmap="coolwarm", vmin=vmin, vmax=vmax)
+        cbar = fig_e.colorbar(sc, ax=ax_e, orientation="vertical", pad=0.05)
+        cbar.set_label("Measured Temperature (°C)")
+        ax_e.legend()
+        save_plot(fig_e, name, i, "E", logging, savefig)
+
+        # 6) Error
+        title_f = f"Prediction Error RMSE={rmse:.3f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
+        fig_f, ax_f = init_earth_fig(title_f, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        error_pred = true_tgt_points - pred_tgt_points.squeeze(0, -1)
+        ax_f.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
+        sc = ax_f.scatter(long_tgt, lat_tgt, c=error_pred, s=20, cmap="coolwarm", vmin=error_pred.min(), vmax=error_pred.max())
+        cbar = fig_f.colorbar(sc, ax=ax_f, orientation="vertical", pad=0.05)
+        cbar.set_label("Prediction Error (°C) [True - Predicted]")
+        ax_f.legend()
+        save_plot(fig_f, name, i, "F", logging, savefig)
+
+        # 7) Absolute Error
+        title_g = f"Absolute Prediction Error RMSE={rmse:.3f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
+        fig_g, ax_g = init_earth_fig(title_g, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        error_pred = torch.abs(true_tgt_points - pred_tgt_points.squeeze(0, -1))
+        ax_g.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
+        sc = ax_g.scatter(long_tgt, lat_tgt, c=error_pred, s=20, cmap="coolwarm", vmin=error_pred.min(), vmax=error_pred.max())
+        cbar = fig_g.colorbar(sc, ax=ax_g, orientation="vertical", pad=0.05)
+        cbar.set_label("Absolute Prediction Error (°C)")
+        ax_g.legend()
+        save_plot(fig_g, name, i, "G", logging, savefig)
 
     exit(0)
 
