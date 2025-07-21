@@ -19,13 +19,15 @@ import datetime
 matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
 
-# 6 key plots per item
+# Following key plots
 # 1) Show context and target stations with dots on the map
 # 2) Show context station ordering (order of points)
 # 3) Extrapolate predictions onto whole grid (i.e. not just stations)
 # 4) Prediction at target stations
 # 5) True station readings
-# 6) show error at target stations
+# 6) error at target stations
+# 7) absolute error at target stations
+# 8) Predictions and true readings side by side for easy comparison
 def plot_hadISD(
     model: nn.Module,
     batches: List[HadISDBatch],
@@ -195,6 +197,35 @@ def plot_hadISD(
         cbar.set_label("Absolute Prediction Error (°C)")
         ax_g.legend()
         save_plot(fig_g, name, i, "G", logging, savefig)
+
+        # 8) Side by Side of predicted vs true temps
+        title_h = f"Predicted vs Recorded Temperature NLL={nll:.3f} NC={nc} - {batch_time_str}"
+        # Wider figure this time
+        fig_h, (ax_pred, ax_true) = plt.subplots(
+            1, 2,
+            figsize=(figsize[0], figsize[1]), # Adjust width by hand basically
+            subplot_kw={"projection": proj},
+            gridspec_kw={"wspace": 0.05}
+        )
+        for ax in (ax_pred, ax_true):
+            ax.add_feature(cfeature.COASTLINE)
+            ax.add_feature(cfeature.BORDERS)
+            ax.set_extent([*batch_pred.long_range, *batch_pred.lat_range], crs=proj)
+        vmin = min(pred_tgt_points.min(), true_tgt_points.min())
+        vmax = max(pred_tgt_points.max(), true_tgt_points.max())
+        # Left: Predicted Temps
+        ax_pred.set_title("Predicted")
+        ax_pred.scatter(long_ctx, lat_ctx, c="k", s=10)
+        sc_pred = ax_pred.scatter(long_tgt, lat_tgt, c=pred_tgt_points, cmap="coolwarm", vmin=vmin, vmax=vmax, s=20)
+        # Right: recorded temperature
+        ax_true.set_title("Recorded",)
+        ax_true.scatter(long_ctx, lat_ctx, c="k", s=10)
+        sc_true = ax_true.scatter(long_tgt, lat_tgt, c=true_tgt_points, cmap="coolwarm", vmin=vmin, vmax=vmax,s=20)
+        cbar_ax = fig_h.add_axes([0.92, 0.15, 0.02, 0.7])
+        cbar = fig_h.colorbar(sc_true, cax=cbar_ax)
+        cbar.set_label("Temperature (°C)")
+        fig_h.suptitle(title_h)
+        save_plot(fig_h, name, i, "H", logging, savefig)
 
     exit(0)
 
