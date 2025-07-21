@@ -58,17 +58,20 @@ def plot_hadISD(
         # For computation reasons this grid can not be too big
         # TODO precache this grid with true z estimates for grid - currently just set Z as constant for simplicity which is ofc not true
         N_POINTS = 100 # defines N x N grid
-        lat_points = np.linspace(batch.lat_range[0], batch.lat_range[1], N_POINTS)
-        long_points = np.linspace(batch.long_range[0], batch.long_range[1], N_POINTS)
-        lat_grid, lon_grid = np.meshgrid(lat_points, long_points)
+        lat_vec = np.linspace(batch.lat_range[0], batch.lat_range[1], N_POINTS)
+        lon_vec = np.linspace(batch.long_range[0], batch.long_range[1], N_POINTS)
+        lat_mesh, lon_mesh = np.meshgrid(lat_vec, lon_vec)
+        #Normalise lat and lon
+        lat_norm = 2.0 * (lat_mesh - batch.lat_range[0]) / (batch.lat_range[1] - batch.lat_range[0]) - 1.0
+        lon_norm = 2.0 * (lon_mesh - batch.long_range[0]) / (batch.long_range[1] - batch.long_range[0]) - 1.0
         time = np.full(shape=(N_POINTS*N_POINTS), fill_value=unnorm_time.cpu())
         time = normalise_time(time)
         # Z constaint hack: TODO precache with true values
         z_const_temp = 30.0
         elevation = np.full(shape=(N_POINTS * N_POINTS), fill_value=z_const_temp) * batch.std_elev + batch.mean_elev
         # Convert stuff to tensors
-        lat = torch.tensor(lat_grid.flatten(), device=xc.device, dtype=xc.dtype)
-        long = torch.tensor(lon_grid.flatten(),  device=xc.device, dtype=xc.dtype)
+        lat = torch.tensor(lat_norm.flatten(), device=xc.device, dtype=xc.dtype)
+        long = torch.tensor(lon_norm.flatten(),  device=xc.device, dtype=xc.dtype)
         time = torch.tensor(time, device=xc.device, dtype=xc.dtype) # [N]
         elevation = torch.tensor(elevation, device=xc.device, dtype=xc.dtype) #[N]
         xt_grid = torch.stack((lat, long, time, elevation), dim=-1) # [N, 4]
@@ -90,6 +93,8 @@ def plot_hadISD(
             y_gridded_pred_dist = pred_fn(model, batch_grid, predict_without_yt_tnpa=True)
         yt_pred_dist = scale_pred_temp_dist(batch_pred, yt_pred_dist)
         y_gridded_pred_dist = scale_pred_temp_dist(batch_grid, y_gridded_pred_dist)
+        #y_gridded_pred_dist.mean.shape = [1, N_POINTS * N_POINTS, 1]
+        predicted_grid_points = y_gridded_pred_dist.mean.view(N_POINTS, N_POINTS).cpu()
         # Computes NLL
         nll = -yt_pred_dist.log_prob(batch_pred.yt).sum() / batch_pred.yt[..., 0].numel()
         _, nc, _ = batch_pred.xc.shape
@@ -99,8 +104,8 @@ def plot_hadISD(
         lat_ctx = (((xc[:, :,0].cpu() + 1.0) / 2.0) * (batch_pred.lat_range[1] - batch_pred.lat_range[0])) + batch_pred.lat_range[0]
         long_tgt = (((xt[:, :,1].cpu() + 1.0) / 2.0) * (batch_pred.long_range[1] - batch_pred.long_range[0])) + batch_pred.long_range[0]
         lat_tgt = (((xt[:, :,0].cpu() + 1.0) / 2.0) * (batch_pred.lat_range[1] - batch_pred.lat_range[0])) + batch_pred.lat_range[0]
-        long_grid = (((batch_grid.xt[:, :,1].cpu() + 1.0) / 2.0) * (batch_pred.long_range[1] - batch_pred.long_range[0])) + batch_pred.long_range[0]
-        lat_grid = (((batch_grid.xt[:, :,0].cpu() + 1.0) / 2.0) * (batch_pred.lat_range[1] - batch_pred.lat_range[0])) + batch_pred.lat_range[0]
+        long_grid = ((((batch_grid.xt[:, :,1].view(N_POINTS, N_POINTS).cpu() + 1.0) / 2.0) * (batch_pred.long_range[1] - batch_pred.long_range[0])) + batch_pred.long_range[0])
+        lat_grid = (((batch_grid.xt[:, :,0].view(N_POINTS, N_POINTS).cpu() + 1.0) / 2.0) * (batch_pred.lat_range[1] - batch_pred.lat_range[0])) + batch_pred.lat_range[0]
 
         proj = ccrs.PlateCarree()
         batch_time_str = convert_time_to_str(unnorm_time.cpu().item())
@@ -111,6 +116,25 @@ def plot_hadISD(
         ax_a.scatter(long_tgt, lat_tgt, c="r", s=10, label="Target")
         ax_a.legend()
         save_plot(fig_a, name, i, "A", logging, savefig)
+
+        # 2) Shows ordering of context points
+        title_b = f"Context Ordering NC={nc}"
+        fig_b, ax_b = init_earth_fig(title_b, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        context_order = np.arange(1, nc + 1)
+        sc = ax_b.scatter(long_ctx, lat_ctx, c=context_order, cmap='plasma', s=10)
+        cbar = fig_b.colorbar(sc, ax=ax_b)
+        cbar.set_label(f"Context Point Order (1-{nc})")
+        save_plot(fig_b, name, i, "B", logging, savefig)
+
+        # 3) Predictions at wide range of points within box
+        title_c = f"Gridded Predictions NC={nc} P={N_POINTS * N_POINTS:,} - {batch_time_str}"
+        fig_c, ax_c = init_earth_fig(title_c, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        pcm = ax_c.pcolormesh(lon_mesh, lat_mesh, predicted_grid_points, cmap="coolwarm", shading="auto")
+        cbar = fig_c.colorbar(pcm, ax=ax_c, orientation="vertical", pad=0.05)
+        cbar.set_label("Temperature (°C)")
+        save_plot(fig_c, name, i, "C", logging, savefig)
+
+        # 5) 
 
 
     exit(0)
