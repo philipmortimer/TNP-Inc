@@ -2,35 +2,29 @@ generators:
   train:
     _target_: tnp.data.hadISD.HadISDDataGenerator
     min_nc: 1
-    max_nc: 200 # 2033 is max for certain box
+    max_nc: 2033 # 2033 is max for certain box
     nt: 250
-    lat_range: ${params.lat_range}
-    long_range: ${params.long_range}
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 2_000
+    samples_per_epoch: 500
     batch_size: 32
     data_directory: ${params.train_path}
   val:
     _target_: tnp.data.hadISD.HadISDDataGenerator
     min_nc: 1
-    max_nc: 200
+    max_nc: 2033
     nt: 250
-    lat_range: ${params.lat_range}
-    long_range: ${params.long_range}
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 1_500
+    samples_per_epoch: 2_000
     batch_size: 32
     deterministic: True
     data_directory: ${params.val_path}
   test:
     _target_: tnp.data.hadISD.HadISDDataGenerator
     min_nc: 1
-    max_nc: 200
+    max_nc: 2033
     nt: 250
-    lat_range: ${params.lat_range}
-    long_range: ${params.long_range}
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 2_000
+    samples_per_epoch: 80_000
     batch_size: 32
     deterministic: True
     data_directory: ${params.test_path}
@@ -45,6 +39,7 @@ tnp_encoder:
   _target_: tnp.models.tnp.TNPEncoder
   transformer_encoder: ${transformer_encoder}
   xy_encoder: ${xy_encoder}
+  x_encoder: ${x_encoder}
 
 transformer_encoder:
   _target_: tnp.networks.transformer.TNPTransformerEncoder
@@ -70,10 +65,18 @@ mhca_layer:
 
 xy_encoder:
   _target_: tnp.networks.mlp.MLP
-  in_dim: ${eval:'1 + ${params.dim_y} + ${params.dim_x}'}
+  in_dim: ${eval:'1 + ${params.dim_y} + ${params.lat_embed_dims} + ${params.lon_embed_dims} + ${params.time_embed_dims} + ${params.elev_embed_dims}'}
   out_dim: ${params.embed_dim}
   num_layers: 2
   width: ${params.embed_dim}
+
+x_encoder:
+  _target_: tnp.networks.fourier_embed.FourierEmbedderHadISD
+  embed_dim_lambdamin_lambda_max:
+    - ${params.lat_emb_lmin_lmax}
+    - ${params.lon_emb_lmin_lmax}
+    - ${params.time_emb_lmin_lmax}
+    - ${params.elev_emb_lmin_lmax}
 
 tnp_decoder:
   _target_: tnp.models.tnp.TNPDecoder
@@ -96,20 +99,40 @@ optimiser:
 
 params:
   # Model + Training Params
-  epochs: 1
+  epochs: 200
   embed_dim: 128
   num_heads: 8
   head_dim: 16
   norm_first: True
   num_layers: 5
 
+  # Embedding dimensions for x encoder
+  lat_embed_dims: 32
+  lon_embed_dims: 32
+  time_embed_dims: 32
+  elev_embed_dims: 32
+  lat_emb_lmin_lmax: # lat is [-1, 1]
+    - ${params.lat_embed_dims}
+    - 0.001
+    - 2.0
+  lon_emb_lmin_lmax: # long is [-1, 1]
+    - ${params.lon_embed_dims}
+    - 0.001
+    - 2.0
+  time_emb_lmin_lmax: # 8760 = 24 * 365 (i.e hours in a year)
+    - ${params.time_embed_dims}
+    - 1.0
+    - 8760.0
+  elev_emb_lmin_lmax: # Elevation is z normalised. for current patch 7.7 sigma is the most extreme elev
+    - ${params.elev_embed_dims}
+    - 0.1
+    - 8.0
+
   # Fixed constants known
   dim_x: 4
   dim_y: 1
 
   # Data Params - this may need some hand crafted finetuning (rune the pre proc scripts first if changing ranges). Also this might not always be checked properly so ensure they are correct
-  lat_range: [-20.0, 60.0]
-  long_range: [-10.0, 52.0]
   ordering_strategy: "random"
 
   # File paths for specific training resource (adjust for machine)
@@ -119,7 +142,7 @@ params:
 
 misc:
   project: plain-tnp-had
-  name: plain-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}-rangelat-${params.lat_range}-rangelon-${params.long_range}
+  name: plain-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
   resume_from_checkpoint: null
   gradient_clip_val: 0.5
 
@@ -134,4 +157,5 @@ misc:
   plot_interval: 10
   check_val_every_n_epoch: 1
   checkpoint_interval: 10
-  num_workers: 32
+  num_workers: 3
+  num_val_workers: 0
