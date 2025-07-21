@@ -95,6 +95,8 @@ def plot_hadISD(
         y_gridded_pred_dist = scale_pred_temp_dist(batch_grid, y_gridded_pred_dist)
         #y_gridded_pred_dist.mean.shape = [1, N_POINTS * N_POINTS, 1]
         predicted_grid_points = y_gridded_pred_dist.mean.view(N_POINTS, N_POINTS).cpu()
+        pred_tgt_points = yt_pred_dist.mean.cpu()
+        true_tgt_points = batch_pred.yt.squeeze(0, -1).cpu()
         # Computes NLL
         nll = -yt_pred_dist.log_prob(batch_pred.yt).sum() / batch_pred.yt[..., 0].numel()
         _, nc, _ = batch_pred.xc.shape
@@ -134,8 +136,18 @@ def plot_hadISD(
         cbar.set_label("Temperature (°C)")
         save_plot(fig_c, name, i, "C", logging, savefig)
 
-        # 5) 
-
+        # 4) Shows predictions at target stations
+        title_d = f"Predicted Temperature NLL={nll:.3f} NC={nc} - {batch_time_str}"
+        fig_d, ax_d = init_earth_fig(title_d, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        # Consistent colour scheme between true and predicted points range
+        vmin = min(pred_tgt_points.min(), true_tgt_points.min())
+        vmax = max(pred_tgt_points.max(), true_tgt_points.max())
+        ax_d.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
+        sc = ax_d.scatter(long_tgt, lat_tgt, c=pred_tgt_points, s=20, cmap="coolwarm", vmin=vmin, vmax=vmax)
+        cbar = fig_d.colorbar(sc, ax=ax_d, orientation="vertical", pad=0.05)
+        cbar.set_label("Predicted Temperature (°C)")
+        ax_d.legend()
+        save_plot(fig_d, name, i, "D", logging, savefig)
 
     exit(0)
 
