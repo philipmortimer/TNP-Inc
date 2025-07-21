@@ -31,6 +31,9 @@ matplotlib.rcParams["font.family"] = "STIXGeneral"
 def plot_hadISD(
     model: nn.Module,
     batches: List[HadISDBatch],
+    lat_mesh: np.ndarray,
+    lon_mesh: np.ndarray,
+    elev_np: np.ndarray,
     num_fig: int = 5,
     figsize: Tuple[float, float] = (8.0, 6.0),
     name: str = "plot",
@@ -57,26 +60,20 @@ def plot_hadISD(
             lat_range=batch.lat_range, long_range=batch.long_range, unnormalised_time=unnorm_time, ordering=batch.ordering)
         
         # Makes a batch within the lat and long range of all points (i.e. gridded). context is same just targets different
-        # For computation reasons this grid can not be too big
-        # TODO precache this grid with true z estimates for grid - currently just set Z as constant for simplicity which is ofc not true
-        N_POINTS = 100 # defines N x N grid
-        lat_vec = np.linspace(batch.lat_range[0], batch.lat_range[1], N_POINTS)
-        lon_vec = np.linspace(batch.long_range[0], batch.long_range[1], N_POINTS)
-        lat_mesh, lon_mesh = np.meshgrid(lat_vec, lon_vec)
+        # Uses cached DEM file data for 2m temperature
+        N_POINTS = lat_mesh.shape[0] # defines N x N grid
         #Normalise lat and lon
         lat_norm = 2.0 * (lat_mesh - batch.lat_range[0]) / (batch.lat_range[1] - batch.lat_range[0]) - 1.0
         lon_norm = 2.0 * (lon_mesh - batch.long_range[0]) / (batch.long_range[1] - batch.long_range[0]) - 1.0
         time = np.full(shape=(N_POINTS*N_POINTS), fill_value=unnorm_time.cpu())
         time = normalise_time(time)
         # Z constaint hack: TODO precache with true values
-        z_const_temp = 30.0
-        z_norm = (z_const_temp - batch.mean_elev) / batch.std_elev
-        elevation = np.full(shape=(N_POINTS * N_POINTS), fill_value=z_norm)
+        elev_norm = (elev_np - batch.mean_elev) / batch.std_elev
+        elevation = torch.tensor(elev_norm.flatten(), device=xc.device, dtype=xc.dtype) 
         # Convert stuff to tensors
         lat = torch.tensor(lat_norm.flatten(), device=xc.device, dtype=xc.dtype)
         long = torch.tensor(lon_norm.flatten(),  device=xc.device, dtype=xc.dtype)
         time = torch.tensor(time, device=xc.device, dtype=xc.dtype) # [N]
-        elevation = torch.tensor(elevation, device=xc.device, dtype=xc.dtype) #[N]
         xt_grid = torch.stack((lat, long, time, elevation), dim=-1) # [N, 4]
         # Shuffles data
         if batch.ordering == "random":
@@ -123,9 +120,10 @@ def plot_hadISD(
 
         proj = ccrs.PlateCarree()
         batch_time_str = convert_time_to_str(unnorm_time.cpu().item())
+        height_data = lon_mesh, lat_mesh, elev_np
         # 1) Show context and target stations
         title_a = f"NC={nc} NT={nt} - {batch_time_str}"
-        fig_a, ax_a = init_earth_fig(title_a, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        fig_a, ax_a = init_earth_fig(title_a, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
         ax_a.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
         ax_a.scatter(long_tgt, lat_tgt, c="r", s=10, label="Target")
         ax_a.legend()
@@ -133,7 +131,7 @@ def plot_hadISD(
 
         # 2) Shows ordering of context points
         title_b = f"Context Ordering NC={nc}"
-        fig_b, ax_b = init_earth_fig(title_b, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        fig_b, ax_b = init_earth_fig(title_b, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
         context_order = np.arange(1, nc + 1)
         sc = ax_b.scatter(long_ctx, lat_ctx, c=context_order, cmap='plasma', s=10)
         cbar = fig_b.colorbar(sc, ax=ax_b)
@@ -142,7 +140,7 @@ def plot_hadISD(
 
         # 3) Predictions at wide range of points within box
         title_c = f"Gridded Predictions NC={nc} P={N_POINTS * N_POINTS:,} - {batch_time_str}"
-        fig_c, ax_c = init_earth_fig(title_c, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        fig_c, ax_c = init_earth_fig(title_c, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
         pcm = ax_c.pcolormesh(lon_mesh, lat_mesh, predicted_grid_points, cmap="coolwarm", shading="auto")
         cbar = fig_c.colorbar(pcm, ax=ax_c, orientation="vertical", pad=0.05)
         cbar.set_label("Temperature (°C)")
@@ -150,7 +148,7 @@ def plot_hadISD(
 
         # 4) Shows predictions at target stations
         title_d = f"Predicted Temperature NLL={nll:.3f} NC={nc} - {batch_time_str}"
-        fig_d, ax_d = init_earth_fig(title_d, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        fig_d, ax_d = init_earth_fig(title_d, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
         # Consistent colour scheme between true and predicted points range
         vmin = min(pred_tgt_points.min(), true_tgt_points.min())
         vmax = max(pred_tgt_points.max(), true_tgt_points.max())
@@ -163,7 +161,7 @@ def plot_hadISD(
 
         # 5) Show true target station readings
         title_e = f"Recorded Temperature NC={nc} - {batch_time_str}"
-        fig_e, ax_e = init_earth_fig(title_e, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        fig_e, ax_e = init_earth_fig(title_e, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
         # Consistent colour scheme between true and predicted points range
         vmin = min(pred_tgt_points.min(), true_tgt_points.min())
         vmax = max(pred_tgt_points.max(), true_tgt_points.max())
@@ -176,7 +174,7 @@ def plot_hadISD(
 
         # 6) Error
         title_f = f"Prediction Error RMSE={rmse:.3f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
-        fig_f, ax_f = init_earth_fig(title_f, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        fig_f, ax_f = init_earth_fig(title_f, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
         error_pred = (true_tgt_points - pred_tgt_points.squeeze(0, -1)).numpy()
         ax_f.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
         max_abs_error = np.max(np.abs(error_pred))
@@ -189,7 +187,7 @@ def plot_hadISD(
 
         # 7) Absolute Error
         title_g = f"Absolute Prediction Error RMSE={rmse:.3f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
-        fig_g, ax_g = init_earth_fig(title_g, figsize, proj, batch_pred.lat_range, batch_pred.long_range)
+        fig_g, ax_g = init_earth_fig(title_g, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
         error_pred = torch.abs(true_tgt_points - pred_tgt_points.squeeze(0, -1))
         ax_g.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
         sc = ax_g.scatter(long_tgt, lat_tgt, c=error_pred, s=20, cmap="viridis", vmin=error_pred.min(), vmax=error_pred.max())
@@ -211,6 +209,7 @@ def plot_hadISD(
             ax.add_feature(cfeature.COASTLINE)
             ax.add_feature(cfeature.BORDERS)
             ax.set_extent([*batch_pred.long_range, *batch_pred.lat_range], crs=proj)
+            pcm_elev = ax.pcolormesh(lon_mesh, lat_mesh, elev_np, cmap="terrain", shading="auto")
         vmin = min(pred_tgt_points.min(), true_tgt_points.min())
         vmax = max(pred_tgt_points.max(), true_tgt_points.max())
         # Left: Predicted Temps
@@ -234,12 +233,15 @@ def convert_time_to_str(unnorm_time: int):
     return final_datetime.strftime("%H:00 %d %B %Y")
 
 # Creates earth map figure outline to be used for plotting
-def init_earth_fig(title, figsize, proj, lat_range, long_range):
+def init_earth_fig(title, figsize, proj, lat_range, long_range, height_data):
     fig = plt.figure(figsize=figsize)
     ax = plt.axes(projection=proj)
     ax.add_feature(cfeature.COASTLINE)
     ax.add_feature(cfeature.BORDERS)
     ax.set_extent([*long_range, *lat_range], crs=proj)
+    if height_data is not None:
+        lon_mesh, lat_mesh, elev_np = height_data
+        pcm_elev = ax.pcolormesh(lon_mesh, lat_mesh, elev_np, cmap="terrain", shading="auto")
     ax.set_title(title)
     return fig, ax
 

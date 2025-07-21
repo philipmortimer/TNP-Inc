@@ -14,6 +14,7 @@ from tnp.utils.lightning_utils import LitWrapper, LogPerformanceCallback
 from tnp.data.hadISD import HadISDDataGenerator
 from eval import test_model
 from lightning.pytorch.utilities import rank_zero_only
+from data_temp.data_processing.elevations import get_cached_elevation_grid
 
 
 def main():
@@ -75,6 +76,12 @@ def main():
         )
         if is_training: model.train()
 
+    # Sets up elevation caching if appropriate
+    if is_hadISD_train:
+        lat_mesh, lon_mesh, elev_np = get_cached_elevation_grid(gen_train.lat_range, gen_train.long_range,
+            experiment.misc.num_grid_points_plot, experiment.misc.cache_dem_dir,
+            experiment.misc.dem_path)
+
     def plot_fn_hadISD(model, batches, name):
         is_training = model.training
         model.eval()
@@ -84,6 +91,9 @@ def main():
             num_fig=min(5, len(batches)),
             name=name,
             pred_fn=experiment.misc.pred_fn,
+            lat_mesh=lat_mesh,
+            lon_mesh=lon_mesh,
+            elev_np=elev_np,
         )
         if is_training: model.train()
 

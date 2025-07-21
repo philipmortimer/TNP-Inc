@@ -5,7 +5,7 @@ generators:
     max_nc: 2033 # 2033 is max for certain box
     nt: 250
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 64
+    samples_per_epoch: 500
     batch_size: 32
     data_directory: ${params.train_path}
   val:
@@ -14,7 +14,7 @@ generators:
     max_nc: 2033
     nt: 250
     ordering_strategy: ${params.ordering_strategy}
-    samples_per_epoch: 100
+    samples_per_epoch: 1_000
     batch_size: 32
     deterministic: True
     data_directory: ${params.val_path}
@@ -99,7 +99,7 @@ optimiser:
 
 params:
   # Model + Training Params
-  epochs: 2
+  epochs: 200
   embed_dim: 128
   num_heads: 8
   head_dim: 16
@@ -148,6 +148,9 @@ misc:
 
   # Plot misc
   eval_name: test_eval
+  num_grid_points_plot: 200 # Number of points to use for plot of gridded predictions
+  dem_path: "/scratch/pm846/TNP/data/elev_data/ETOPO_2022_v1_60s_N90W180_surface.nc" # dem file
+  cache_dem_dir: "/scratch/pm846/TNP/data/elev_data/" # Where to cache dem processing results
   seed: 1
   only_plots: False
   num_plots: 10
