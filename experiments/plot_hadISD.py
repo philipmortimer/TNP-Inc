@@ -183,7 +183,7 @@ def plot_hadISD(
         ax_f.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
         max_abs_error = np.max(np.abs(error_pred))
         error_norm = matplotlib.colors.TwoSlopeNorm(vcenter=0, vmin=-max_abs_error, vmax=max_abs_error)
-        sc = ax_f.scatter(long_tgt, lat_tgt, c=error_pred, s=20, cmap="seismic", vmin=-max_abs_error, vmax=max_abs_error)
+        sc = ax_f.scatter(long_tgt, lat_tgt, c=error_pred, s=20, cmap="seismic", norm=error_norm)
         cbar = fig_f.colorbar(sc, ax=ax_f, orientation="vertical", pad=0.05)
         cbar.set_label("Prediction Error (°C) [True - Predicted]")
         ax_f.legend()
@@ -235,11 +235,11 @@ def plot_hadISD(
             title_i = f"Gridded Predictions NC={nc} P={N_POINTS * N_POINTS:,} - {batch_time_str}"
             fig_i, ax_i = init_earth_fig(title_i, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
             pcm = ax_i.pcolormesh(lon_mesh, lat_mesh, predicted_grid_points, cmap="coolwarm", shading="auto")
-            cbar = fig_c.colorbar(pcm, ax=ax_i, orientation="vertical", pad=0.05)
+            cbar = fig_i.colorbar(pcm, ax=ax_i, orientation="vertical", pad=0.05)
             cbar.set_label("Temperature (°C)")
             ax_i.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
             ax_i.legend()
-            save_plot(fig_c, name, i, "I", logging, savefig)
+            save_plot(fig_i, name, i, "I", logging, savefig)
 
 # Converts number of hours since 1st Jan 1931 into a formatted string
 def convert_time_to_str(unnorm_time: int):
