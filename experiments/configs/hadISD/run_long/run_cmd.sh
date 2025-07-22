@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script to run a list of commands on gpu one after another for a long amount of time
-COMMAND_FILE="/homes/pm846/Thesis/Code/TNP-Inc/experiments/configs/hadISD/run_long.txt"
+COMMAND_FILE="/homes/pm846/Thesis/Code/TNP-Inc/experiments/configs/hadISD/run_long/commands.txt"
 
 # Does command file actually exist
 if [ ! -f "$COMMAND_FILE" ]; then
