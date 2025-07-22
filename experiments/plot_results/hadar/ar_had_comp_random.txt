@@ -1,3 +1,3 @@
 --------------------
 Model: TNP-D
-Mean LL: 0.5552213072776795
+Mean LL: nan STD LL: nan Mean RMSE: nan STD RMSE: nan

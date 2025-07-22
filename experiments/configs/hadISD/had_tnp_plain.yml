@@ -148,7 +148,7 @@ misc:
 
   # Plot misc
   eval_name: test_eval
-  num_grid_points_plot: 200 # Number of points to use for plot of gridded predictions
+  num_grid_points_plot: 100 # Number of points to use for plot of gridded predictions
   dem_path: "/scratch/pm846/TNP/data/elev_data/ETOPO_2022_v1_60s_N90W180_surface.nc" # dem file
   cache_dem_dir: "/scratch/pm846/TNP/data/elev_data/" # Where to cache dem processing results
   seed: 1

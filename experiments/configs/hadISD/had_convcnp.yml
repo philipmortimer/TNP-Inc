@@ -96,7 +96,7 @@ optimiser:
 
 params:
   # Model + Training Params
-  epochs: 200
+  epochs: 100
   num_channels: 32
   num_blocks: 5
   kernel_size: 9

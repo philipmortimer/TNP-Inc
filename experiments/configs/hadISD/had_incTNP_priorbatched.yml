@@ -100,7 +100,7 @@ optimiser:
 
 params:
   # Model + Training Params
-  epochs: 200
+  epochs: 100
   embed_dim: 128
   num_heads: 8
   head_dim: 16
