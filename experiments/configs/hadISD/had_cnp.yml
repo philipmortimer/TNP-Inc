@@ -45,8 +45,8 @@ x_encoder:
   embed_dim_lambdamin_lambda_max:
     - ${params.lat_emb_lmin_lmax}
     - ${params.lon_emb_lmin_lmax}
-    - ${params.time_emb_lmin_lmax}
     - ${params.elev_emb_lmin_lmax}
+    - ${params.time_emb_lmin_lmax}
 
 deepset:
   _target_: tnp.networks.deepset.DeepSet

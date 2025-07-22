@@ -2,10 +2,12 @@ import einops
 import torch
 from check_shapes import check_shapes
 from torch import nn
+from typing import Optional
 
 from ..networks.setconv import SetConvGridDecoder, SetConvGridEncoder
 from .base import ConditionalNeuralProcess
 from .tnp import TNPDecoder
+from ..networks.fourier_embed import FourierEmbedderHadISD
 
 
 class ConvCNPEncoder(nn.Module):
@@ -16,6 +18,7 @@ class ConvCNPEncoder(nn.Module):
         grid_decoder: SetConvGridDecoder,
         z_encoder: nn.Module,
         hadisd_mode: bool = False, 
+        fourier_encoder: Optional[FourierEmbedderHadISD] = None,
     ):
         super().__init__()
 
@@ -39,6 +42,8 @@ class ConvCNPEncoder(nn.Module):
             flag = torch.ones_like(yc[..., :1])
             elev = xc[..., 2:3]
             time = xc[..., 3:4]
+            # Passes these features into fourier embedder
+            
             z_feats = torch.cat((yc, flag, time, elev), dim=-1) 
             xc_coords = xc[..., :2] # Cuts out time and elevation for CNN
             xt_coords = xt[..., :2]    

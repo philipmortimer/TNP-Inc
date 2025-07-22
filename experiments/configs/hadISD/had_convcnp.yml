@@ -72,6 +72,12 @@ tnp_decoder:
   _target_: tnp.models.tnp.TNPDecoder
   z_decoder: ${z_decoder}
 
+fourier_encoder:
+  _target_: tnp.networks.fourier_embed.FourierEmbedderHadISD
+  embed_dim_lambdamin_lambda_max:
+    - ${params.time_emb_lmin_lmax}
+    - ${params.elev_emb_lmin_lmax}
+
 z_decoder:
   _target_: tnp.networks.mlp.MLP
   in_dim: ${params.num_channels}
@@ -97,8 +103,19 @@ params:
   grid_range:
     - [-1.0, 1.0]
     - [-1.0, 1.0]
-  grid_shape: [50, 50] # Grid res hyper
+  grid_shape: [50, 50] # Grid res hyper make as big as possible whilst still fitting in mem
   init_lengthscale: 0.1
+
+  time_embed_dims: 32
+  elev_embed_dims: 32
+  time_emb_lmin_lmax: # 8760 = 24 * 365 (i.e hours in a year)
+    - ${params.time_embed_dims}
+    - 1.0
+    - 8760.0
+  elev_emb_lmin_lmax: # Elevation is z normalised. for current patch 7.7 sigma is the most extreme elev
+    - ${params.elev_embed_dims}
+    - 0.1
+    - 8.0
 
 
   # Fixed constants known
