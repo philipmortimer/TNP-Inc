@@ -28,6 +28,7 @@ matplotlib.rcParams["font.family"] = "STIXGeneral"
 # 6) error at target stations
 # 7) absolute error at target stations
 # 8) Predictions and true readings side by side for easy comparison
+# 9) Gridded predictions with the context points
 def plot_hadISD(
     model: nn.Module,
     batches: List[HadISDBatch],
@@ -147,7 +148,7 @@ def plot_hadISD(
         save_plot(fig_c, name, i, "C", logging, savefig)
 
         # 4) Shows predictions at target stations
-        title_d = f"Predicted Temperature NLL={nll:.3f} NC={nc} - {batch_time_str}"
+        title_d = f"Predicted Temperature RMSE={rmse:.2f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
         fig_d, ax_d = init_earth_fig(title_d, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
         # Consistent colour scheme between true and predicted points range
         vmin = min(pred_tgt_points.min(), true_tgt_points.min())
@@ -173,7 +174,7 @@ def plot_hadISD(
         save_plot(fig_e, name, i, "E", logging, savefig)
 
         # 6) Error
-        title_f = f"Prediction Error RMSE={rmse:.3f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
+        title_f = f"Prediction Error RMSE={rmse:.2f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
         fig_f, ax_f = init_earth_fig(title_f, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
         error_pred = (true_tgt_points - pred_tgt_points.squeeze(0, -1)).numpy()
         ax_f.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
@@ -186,7 +187,7 @@ def plot_hadISD(
         save_plot(fig_f, name, i, "F", logging, savefig)
 
         # 7) Absolute Error
-        title_g = f"Absolute Prediction Error RMSE={rmse:.3f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
+        title_g = f"Absolute Prediction Error RMSE={rmse:.2f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
         fig_g, ax_g = init_earth_fig(title_g, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
         error_pred = torch.abs(true_tgt_points - pred_tgt_points.squeeze(0, -1))
         ax_g.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
@@ -197,7 +198,7 @@ def plot_hadISD(
         save_plot(fig_g, name, i, "G", logging, savefig)
 
         # 8) Side by Side of predicted vs true temps
-        title_h = f"Predicted vs Recorded Temperature NLL={nll:.3f} NC={nc} - {batch_time_str}"
+        title_h = f"Predicted vs Recorded Temperature RMSE={rmse:.2f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
         # Wider figure this time
         fig_h, (ax_pred, ax_true) = plt.subplots(
             1, 2,
@@ -225,6 +226,16 @@ def plot_hadISD(
         cbar.set_label("Temperature (°C)")
         fig_h.suptitle(title_h)
         save_plot(fig_h, name, i, "H", logging, savefig)
+
+        # 9) Gridded predictions with context points
+        title_i = f"Gridded Predictions NC={nc} P={N_POINTS * N_POINTS:,} - {batch_time_str}"
+        fig_i, ax_i = init_earth_fig(title_i, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
+        pcm = ax_i.pcolormesh(lon_mesh, lat_mesh, predicted_grid_points, cmap="coolwarm", shading="auto")
+        cbar = fig_c.colorbar(pcm, ax=ax_i, orientation="vertical", pad=0.05)
+        cbar.set_label("Temperature (°C)")
+        ax_i.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
+        ax_i.legend()
+        save_plot(fig_c, name, i, "I", logging, savefig)
 
 # Converts number of hours since 1st Jan 1931 into a formatted string
 def convert_time_to_str(unnorm_time: int):

@@ -1,4 +1,4 @@
-# Autoregressive neural process - test time only.
+# Autoregressive neural process - test time only. For HADISD (copy of arnp.py but for hadISD essentially)
 # Based on https://arxiv.org/pdf/2303.14468 - takes a normal NP model and treats predicted target points as context points
 # Inspired by https://github.com/wesselb/neuralprocesses/blob/main/neuralprocesses
 import torch
@@ -9,16 +9,19 @@ from tnp.utils.np_functions import np_pred_fn
 from tnp.data.base import Batch
 from tnp.models.incUpdateBase import IncUpdateEff, IncUpdateEffFixed
 from plot_adversarial_perms import get_model
-from tnp.data.gp import RandomScaleGPGenerator
-from tnp.networks.gp import RBFKernel
 from functools import partial
 from tqdm import tqdm
 import numpy as np
 import torch.distributions as td
-from plot import plot
 import os
 import matplotlib.pyplot as plt
 import matplotlib
+from tnp.data.hadISD import HadISDDataGenerator
+from plot_hadISD import plot_hadISD
+import numpy as np
+from tnp.utils.data_loading import adjust_num_batches
+from data_temp.data_processing.elevations import get_cached_elevation_grid
+
 
 matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
@@ -73,16 +76,17 @@ def _shuffle_targets(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt
 
 
 @check_shapes(
-    "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]", "return: [m]"
+    "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]"
 )
 @torch.no_grad
-def ar_loglik(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor,
+def ar_metrics(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor,
     normalise: bool = True, order: Literal["random", "given", "left-to-right", "variance"] = "random") -> torch.Tensor:
     xt, yt, _ = _shuffle_targets(np_model, xc, yc, xt, yt, order)
     np_model.eval()
     m, nt, dx = xt.shape
     _, nc, dy = yc.shape
     log_probs = torch.zeros((m), device=xt.device)
+    squared_errors = torch.zeros((m), device=xt.device, dtype=torch.float64)
     for i in range(nt):
         # Sets context and target
         xt_sel = xt[:,i:i+1,:]
@@ -94,9 +98,12 @@ def ar_loglik(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch
         # Prediction + log prob
         pred_dist = np_pred_fn(np_model, batch)
         log_probs += pred_dist.log_prob(yt_sel).sum(dim=(-1, -2))
+
+        squared_errors += (pred_dist.mean - yt_sel).to(squared_errors.dtype).pow(2).sum(dim=(-1, -2))
     if normalise:
         log_probs /= (nt * dy)
-    return log_probs
+    rmse = torch.sqrt(squared_errors / (nt * dy)).to(xt.dtype)
+    return log_probs, rmse
 
 
 @check_shapes(
@@ -179,105 +186,20 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
 
 # -------------------------------------------------------------------------------------------------------
 
-# Plots performance of select models with varying nc, nt, s
-def plot_rmse_predict_vs_time():
-    # Would be cool to plot like figure 7 of LBANP paper but with runtime vs rmse
-    # only worry is that to see big O runtime changes. Also RBF kernel could be bad example
-    # since quite simple. But would be really great to see like whole spectrum
-    # of TNP-D, incTNP-Batched, convCNP and CNP as a spectrum of performance vs time.
-    device="cuda"
-    out_folder = "experiments/plot_results/ar/rmse/"
-    burn_in = 1
-    order="random"
-    aggregate_over = 1
-    max_batch = 20
-    prioritise_fixed = False
-    tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml',
-        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', 'TNP-D')
-    incTNP = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
-        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200', 'incTNP')
-    batchedTNP = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml',
-        'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'incTNP-Batched')
-    priorBatched = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'incTNP-Batched (Prior)')
-    cnp = ('experiments/configs/synthetic1dRBF/gp_cnp_rangesame.yml',
-        'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP')
-    conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
-        'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
-    models =[tnp_plain, incTNP, batchedTNP, priorBatched, cnp, conv_cnp]
-    # Number of samples
-    samples = [1, 5, 10, 20, 30, 40, 50, 100, 200]
-    runtime = np.zeros((len(models), len(samples)))
-    memory = np.zeros((len(models), len(samples)))
-    rmse = np.zeros((len(models), len(samples)))
-    ll = np.zeros((len(models), len(samples)))
-    starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
-    data = get_rbf_rangesame_testset()
-    summary_txt = ""
-    for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
-        model = get_model(model_yml, model_wab, seed=False, device=device)
-        model.eval()
-        for sample_idx, num_samples in enumerate(samples):
-            batch_runtimes = []
-            batch_memories = []
-            batch_rmses = []
-            batch_lls = []
-            for batch_idx, batch in tqdm(enumerate(data), desc=f's={num_samples} mod={model_name}'):
-                if max_batch is not None and batch_idx >= max_batch: break
-                run_runtimes = []
-                run_memories = []
-                run_rmses = []
-                run_lls = []
-                for j in range(burn_in+aggregate_over):
-                    torch.cuda.reset_peak_memory_stats()
-                    torch.cuda.synchronize()
-                    starter.record()
-                    with torch.no_grad():
-                        pred_dist = ar_predict(model=model, xc=batch.xc, yc=batch.yc, xt=batch.xt, order=order, num_samples=num_samples,
-                            device=device, device_ret=device, prioritise_fixed=prioritise_fixed)
-                    # Measures runtime
-                    ender.record()
-                    torch.cuda.synchronize()
-                    peak_memory_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
-                    runtime_ms = starter.elapsed_time(ender)
-                    loglik = (pred_dist.log_prob(batch.yt.to(device)).sum() / batch.yt[..., 0].numel()).item()
-                    rmse_point = nn.functional.mse_loss(pred_dist.mean, batch.yt.to(device)).sqrt().cpu().mean()
-                    if j >= burn_in:
-                        run_runtimes.append(runtime_ms)
-                        run_memories.append(peak_memory_mb)
-                        run_rmses.append(rmse_point)
-                        run_lls.append(loglik)
-                # Aggregates metrics
-                batch_runtimes.append(np.mean(run_runtimes))
-                batch_memories.append(np.mean(run_memories))
-                batch_rmses.append(np.mean(run_rmses))
-                batch_lls.append(np.mean(run_lls))
-            runtime[model_idx, sample_idx] = np.mean(batch_runtimes)
-            rmse[model_idx, sample_idx] = np.mean(batch_rmses)
-            memory[model_idx, sample_idx] = np.mean(batch_memories)
-            ll[model_idx, sample_idx] = np.mean(batch_lls)
-            model_samp_summary = ("*" * 20) + f'\nModel: {model_name}\nRuntime(ms): {runtime[model_idx, sample_idx]}\nSamples: {num_samples}\nAverageMemoryUse(MB): {memory[model_idx, sample_idx]}\nRMSEMean: {rmse[model_idx, sample_idx]}\nLL: {ll[model_idx, sample_idx]}\n'
-            summary_txt += model_samp_summary
-            print(model_samp_summary)
-    # Writes model data to output files
-    with open(out_folder + 'summary_rmse.txt', 'w') as file_obj:
-        file_obj.write(summary_txt)
-
-
 # Measures timings of different models
 def measure_perf_timings():
     # Measure hypers
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 1 # Number of runs to aggregate data over
     token_step = 50 # How many increments of tokens to go up in
-    min_nt, max_nt = 1, 5001
-    dx, dy, m = 1, 1, 1
+    min_nt, max_nt = 1, 2003
+    dx, dy, m = 4, 1, 32
     nc_start = 1
     num_samples=50 # Samples to unroll in ar_predict
     device = "cuda"
     order="random"
     prioritise_fixed = False
-    plot_name_folder = "experiments/plot_results/ar/perf/"
+    plot_name_folder = "experiments/plot_results/hadar/perf/"
     # End of measure hypers
     models = get_model_list()
     max_high = 2
@@ -347,12 +269,12 @@ def plot_ar_unrolls():
     order="random"
     #no_samples = [1, 2, 5, 10, 50, 100, 500, 1000]
     no_samples = [10, 50]
-    folder_name = "experiments/plot_results/ar/plots/"
+    folder_name = "experiments/plot_results/hadar/plots/"
     no_kernels = 5#20
     device="cuda"
     # End of hypers
     models = get_model_list()
-    data = get_rbf_rangesame_testset()
+    data, lat_mesh, lon_mesh, elev_np = get_had_testset_and_plot_stuff()
     for (model_yml, model_wab, model_name) in models:
         model = get_model(model_yml, model_wab, seed=False, device=device)
         model.eval()
@@ -362,74 +284,105 @@ def plot_ar_unrolls():
         for sample in no_samples:
             def pred_fn_pred(model, batch, predict_without_yt_tnpa=True):
                 return ar_predict(model, batch.xc, batch.yc, batch.xt, order, sample, device=device)
-
-            plot(model=model, batches=data, num_fig=min(no_kernels, len(data)), name=model_folder+f"/ns_{sample}_od_{order}",
-                savefig=True, logging=False, pred_fn=pred_fn_pred, x_range = (-2.0, 2.0),
-                model_lbl=f"AR {model_name} (S={sample}) ")
+            plot_hadISD(
+                model=model,
+                batches=batches,
+                num_fig=min(no_kernels, len(data)),
+                name=model_folder+f"/ns_{sample}_od_{order}",
+                pred_fn=pred_fn_pred,
+                lat_mesh=lat_mesh,
+                lon_mesh=lon_mesh,
+                elev_np=elev_np,
+            )
                 
 
-
-def get_rbf_rangesame_testset():
-    # RBF Dataset
+# Loads hadISD set
+def get_had_testset_and_plot_stuff():
+    # Change these for correct machine / directory
+    data_directory = "/scratch/pm846/TNP/data/data_processed/test"
+    dem_path = "/scratch/pm846/TNP/data/elev_data/ETOPO_2022_v1_60s_N90W180_surface.nc"
+    cache_dem_dir = "/scratch/pm846/TNP/data/elev_data/"
+    num_grid_points_plot = 200
+    # Normal hypers
     min_nc = 1
-    max_nc = 64
-    nt= 128
-    context_range = [[-2.0, 2.0]]
-    target_range = [[-2.0, 2.0]]
-    samples_per_epoch = 4_096
-    batch_size = 16
-    noise_std = 0.1
+    max_nc = 2033
+    nt = 250
+    samples_per_epoch= 500
+    batch_size = 32
     deterministic = True
-    ard_num_dims = 1
-    min_log10_lengthscale = -0.602
-    max_log10_lengthscale = 0.0
-    rbf_kernel_factory = partial(RBFKernel, ard_num_dims=ard_num_dims, min_log10_lengthscale=min_log10_lengthscale,
-                         max_log10_lengthscale=max_log10_lengthscale)
-    kernels = [rbf_kernel_factory]
-    gen_test = RandomScaleGPGenerator(dim=1, min_nc=min_nc, max_nc=max_nc, min_nt=nt, max_nt=nt, batch_size=batch_size,
-        context_range=context_range, target_range=target_range, samples_per_epoch=samples_per_epoch, noise_std=noise_std,
-        deterministic=deterministic, kernel=kernels)
-    data = list(gen_test)
-    return data
+    ordering_strategy = "random"
+    num_val_workers = 1
+
+    # Loads had dataset
+    gen_test = HadISDDataGenerator(min_nc=min_nc, max_nc=max_nc, nt=nt, ordering_strategy=ordering_strategy,
+        samples_per_epoch=samples_per_epoch, batch_size=batch_size, data_directory=data_directory)
+    
+    # Wraps data set in a proper torch set loader for less IO bottlenecking
+    test_loader = torch.utils.data.DataLoader(
+       gen_test,
+        batch_size=None,
+        num_workers=num_val_workers,
+        worker_init_fn=(
+            (
+                adjust_num_batches
+            )
+            if num_val_workers > 0
+            else None
+        ),
+        persistent_workers=True if num_val_workers > 0 else False,
+        pin_memory=True,
+    )
+
+    # Loads elevation data from DEM file
+    lat_mesh, lon_mesh, elev_np = get_cached_elevation_grid(gen_test.lat_range, gen_test.long_range,
+        num_grid_points_plot, cache_dem_dir,
+        dem_path)
+
+    return test_loader, lat_mesh, lon_mesh, elev_np
 
 def get_model_list():
     # List of models to compare
-    tnp_plain = ('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml',
-        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200', 'TNP-D')
-    incTNP = ('experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml', 
-        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200', 'incTNP')
-    batchedTNP = ('experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml',
-        'pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200', 'incTNP-Batched')
-    priorBatched = ('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-rbf-rangesame/model-smgj3gn6:v200', 'incTNP-Batched (Prior)')
-    cnp = ('experiments/configs/synthetic1dRBF/gp_cnp_rangesame.yml',
-        'pm846-university-of-cambridge/cnp-rbf-rangesame/model-uywfyrx7:v200', 'CNP')
-    conv_cnp = ('experiments/configs/synthetic1dRBF/gp_convcnp_rangesame.yml',
-        'pm846-university-of-cambridge/convcnp-rbf-rangesame/model-uj54q1ya:v200', 'ConvCNP')
-    models = [tnp_plain, incTNP, batchedTNP, priorBatched, conv_cnp, cnp]
-    models = [tnp_plain, incTNP, conv_cnp, cnp]
+    tnp_plain = ('experiments/configs/hadISD/had_tnp_plain.yml',
+        'pm846-university-of-cambridge/plain-tnp-had/model-o9r9hpyp:v13', 'TNP-D')
+    incTNP = ('experiments/configs/hadISD/had_incTNP.yml', 
+        '', 'incTNP')
+    batchedTNP = ('experiments/configs/hadISD/had_incTNP_batched.yml',
+        '', 'incTNP-Batched')
+    priorBatched = ('experiments/configs/hadISD/had_incTNP_priorbatched.yml',
+        '', 'incTNP-Batched (Prior)')
+    cnp = ('experiments/configs/hadISD/had_cnp.yml',
+        '', 'CNP')
+    conv_cnp = ('experiments/configs/hadISD/had_convcnp.yml',
+        '', 'ConvCNP')
+    models = [tnp_plain]
     return models
 
 # Compares NP models in AR mode on RBF set
-def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
+def compare_had_models(base_out_txt_file: str, device: str = "cuda"):
     # Hypers to select - also look at dataset hypers
     ordering = "random"
     # End of hypers
     # Main loop - loads each model than compares writes performances to a text file
     models = get_model_list()
-    data = get_rbf_rangesame_testset()
+    data, lat_mesh, lon_mesh, elev_np = get_had_testset_and_plot_stuff()
     out_txt = ""
     for (model_yml, model_wab, model_name) in models:
-        ll_list = []
+        ll_list, rmse_list = [], []
         model = get_model(model_yml, model_wab, seed=False, device=device)
         model.eval()
         for batch in tqdm(data, desc=f'{model_name} eval'):
-            ll = ar_loglik(np_model=model, xc=batch.xc.to(device), yc=batch.yc.to(device),
+            ll, rmse = ar_metrics(np_model=model, xc=batch.xc.to(device), yc=batch.yc.to(device),
                 xt=batch.xt.to(device), yt=batch.yt.to(device), normalise=True, order=ordering)
             mean_ll = torch.mean(ll).item() # Goes from [m] to a float
+            mean_rmse = torch.mean(rmse).item()
             ll_list.append(mean_ll)
+            rmse_list.append(mean_rmse)
         ll_average = np.mean(ll_list)
-        mod_sum = ("-" * 20) + f"\nModel: {model_name}\nMean LL: {ll_average}\n"
+        ll_std = np.std(ll_list) / np.sqrt(len(ll_list))
+
+        rmse_average = np.mean(rmse_list)
+        rmse_std = np.std(rmse_list) / np.sqrt(len(rmse_list))
+        mod_sum = ("-" * 20) + f"\nModel: {model_name}\nMean LL: {ll_average} STD LL: {ll_std} Mean RMSE: {rmse_average} STD RMSE: {rmse_std}\n"
         print(mod_sum)
         out_txt += mod_sum
     with open(base_out_txt_file + f'_{ordering}.txt', 'w') as file:
@@ -437,7 +390,6 @@ def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
 
 
 if __name__ == "__main__":
-    #plot_rmse_predict_vs_time()
-    #measure_perf_timings()
-    #plot_ar_unrolls()
-    #compare_rbf_models(base_out_txt_file="experiments/plot_results/ar/ar_rbf_comp")
+    compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp")
+    plot_ar_unrolls()
+    measure_perf_timings()
