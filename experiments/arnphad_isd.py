@@ -193,7 +193,7 @@ def measure_perf_timings():
     aggregate_over = 1 # Number of runs to aggregate data over
     token_step = 50 # How many increments of tokens to go up in
     min_nt, max_nt = 1, 2003
-    dx, dy, m = 4, 1, 32
+    dx, dy, m = 4, 1, 1
     nc_start = 1
     num_samples=50 # Samples to unroll in ar_predict
     device = "cuda"
@@ -266,15 +266,22 @@ def measure_perf_timings():
 # Plots a handful of kernels
 def plot_ar_unrolls():
     # Hypers
+    huge_grid_plots = False # Whether to plot enormous grid prediction - very slow computationally for AR
     order="random"
     #no_samples = [1, 2, 5, 10, 50, 100, 500, 1000]
-    no_samples = [10, 50]
+    no_samples = [1, 2, 10]
     folder_name = "experiments/plot_results/hadar/plots/"
     no_kernels = 5#20
     device="cuda"
     # End of hypers
     models = get_model_list()
     data, lat_mesh, lon_mesh, elev_np = get_had_testset_and_plot_stuff()
+
+    batches_plot = []
+    for i, batch in enumerate(data):
+        batches_plot.append(batch)
+        if i >= no_kernels: break
+
     for (model_yml, model_wab, model_name) in models:
         model = get_model(model_yml, model_wab, seed=False, device=device)
         model.eval()
@@ -286,13 +293,17 @@ def plot_ar_unrolls():
                 return ar_predict(model, batch.xc, batch.yc, batch.xt, order, sample, device=device)
             plot_hadISD(
                 model=model,
-                batches=batches,
-                num_fig=min(no_kernels, len(data)),
+                batches=batches_plot,
+                num_fig=len(batches_plot),
                 name=model_folder+f"/ns_{sample}_od_{order}",
                 pred_fn=pred_fn_pred,
                 lat_mesh=lat_mesh,
                 lon_mesh=lon_mesh,
                 elev_np=elev_np,
+                savefig=True, 
+                logging=False,
+                model_lbl=f"AR {model_name} (S={sample}) ",
+                huge_grid_plots=huge_grid_plots
             )
                 
 
@@ -390,6 +401,6 @@ def compare_had_models(base_out_txt_file: str, device: str = "cuda"):
 
 
 if __name__ == "__main__":
-    compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp")
+    #compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp")
     plot_ar_unrolls()
     measure_perf_timings()

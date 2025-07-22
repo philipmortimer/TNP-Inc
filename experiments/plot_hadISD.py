@@ -42,6 +42,7 @@ def plot_hadISD(
     logging: bool = True,
     model_lbl: str="Model",
     pred_fn: Callable = np_pred_fn,
+    huge_grid_plots: bool = True, # Whether to plot huge grid plots
 ):
     for i in range(num_fig):
         batch = batches[i]
@@ -91,18 +92,19 @@ def plot_hadISD(
         # Gets predictive distributions and scales to correct units
         with torch.no_grad():
             yt_pred_dist = pred_fn(model, batch_pred)
-            y_gridded_pred_dist = pred_fn(model, batch_grid, predict_without_yt_tnpa=True)
+            if huge_grid_plots: y_gridded_pred_dist = pred_fn(model, batch_grid, predict_without_yt_tnpa=True)
         yt_pred_dist = scale_pred_temp_dist(batch_pred, yt_pred_dist)
-        y_gridded_pred_dist = scale_pred_temp_dist(batch_grid, y_gridded_pred_dist)
-        #y_gridded_pred_dist.mean.shape = [1, N_POINTS * N_POINTS, 1]
-        predicted_grid_points_shuffled = y_gridded_pred_dist.mean.squeeze(0)
-        # Unshuffles predicted grid distribution points as appropriate
-        if batch.ordering == "random":
-            predicted_grid_points = torch.empty_like(predicted_grid_points_shuffled)
-            predicted_grid_points[indices] = predicted_grid_points_shuffled
-        else:
-            raise ValueError("Unspoorted plotting ordering type")
-        predicted_grid_points = predicted_grid_points.view(N_POINTS, N_POINTS).cpu()
+        if huge_grid_plots: 
+            y_gridded_pred_dist = scale_pred_temp_dist(batch_grid, y_gridded_pred_dist)
+            #y_gridded_pred_dist.mean.shape = [1, N_POINTS * N_POINTS, 1]
+            predicted_grid_points_shuffled = y_gridded_pred_dist.mean.squeeze(0)
+            # Unshuffles predicted grid distribution points as appropriate
+            if batch.ordering == "random":
+                predicted_grid_points = torch.empty_like(predicted_grid_points_shuffled)
+                predicted_grid_points[indices] = predicted_grid_points_shuffled
+            else:
+                raise ValueError("Unspoorted plotting ordering type")
+            predicted_grid_points = predicted_grid_points.view(N_POINTS, N_POINTS).cpu()
         pred_tgt_points = yt_pred_dist.mean.cpu()
         # Computes NLL
         yt_correct_units = get_true_temp(batch_pred, batch_pred.yt)
@@ -116,8 +118,8 @@ def plot_hadISD(
         lat_ctx = (((xc[:, :,0].cpu() + 1.0) / 2.0) * (batch_pred.lat_range[1] - batch_pred.lat_range[0])) + batch_pred.lat_range[0]
         long_tgt = (((xt[:, :,1].cpu() + 1.0) / 2.0) * (batch_pred.long_range[1] - batch_pred.long_range[0])) + batch_pred.long_range[0]
         lat_tgt = (((xt[:, :,0].cpu() + 1.0) / 2.0) * (batch_pred.lat_range[1] - batch_pred.lat_range[0])) + batch_pred.lat_range[0]
-        long_grid = ((((batch_grid.xt[:, :,1].view(N_POINTS, N_POINTS).cpu() + 1.0) / 2.0) * (batch_pred.long_range[1] - batch_pred.long_range[0])) + batch_pred.long_range[0])
-        lat_grid = (((batch_grid.xt[:, :,0].view(N_POINTS, N_POINTS).cpu() + 1.0) / 2.0) * (batch_pred.lat_range[1] - batch_pred.lat_range[0])) + batch_pred.lat_range[0]
+        if huge_grid_plots: long_grid = ((((batch_grid.xt[:, :,1].view(N_POINTS, N_POINTS).cpu() + 1.0) / 2.0) * (batch_pred.long_range[1] - batch_pred.long_range[0])) + batch_pred.long_range[0])
+        if huge_grid_plots: lat_grid = (((batch_grid.xt[:, :,0].view(N_POINTS, N_POINTS).cpu() + 1.0) / 2.0) * (batch_pred.lat_range[1] - batch_pred.lat_range[0])) + batch_pred.lat_range[0]
 
         proj = ccrs.PlateCarree()
         batch_time_str = convert_time_to_str(unnorm_time.cpu().item())
@@ -140,12 +142,13 @@ def plot_hadISD(
         save_plot(fig_b, name, i, "B", logging, savefig)
 
         # 3) Predictions at wide range of points within box
-        title_c = f"Gridded Predictions NC={nc} P={N_POINTS * N_POINTS:,} - {batch_time_str}"
-        fig_c, ax_c = init_earth_fig(title_c, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
-        pcm = ax_c.pcolormesh(lon_mesh, lat_mesh, predicted_grid_points, cmap="coolwarm", shading="auto")
-        cbar = fig_c.colorbar(pcm, ax=ax_c, orientation="vertical", pad=0.05)
-        cbar.set_label("Temperature (°C)")
-        save_plot(fig_c, name, i, "C", logging, savefig)
+        if huge_grid_plots:
+            title_c = f"Gridded Predictions NC={nc} P={N_POINTS * N_POINTS:,} - {batch_time_str}"
+            fig_c, ax_c = init_earth_fig(title_c, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
+            pcm = ax_c.pcolormesh(lon_mesh, lat_mesh, predicted_grid_points, cmap="coolwarm", shading="auto")
+            cbar = fig_c.colorbar(pcm, ax=ax_c, orientation="vertical", pad=0.05)
+            cbar.set_label("Temperature (°C)")
+            save_plot(fig_c, name, i, "C", logging, savefig)
 
         # 4) Shows predictions at target stations
         title_d = f"Predicted Temperature RMSE={rmse:.2f} NLL={nll:.3f} NC={nc} - {batch_time_str}"
@@ -227,15 +230,16 @@ def plot_hadISD(
         fig_h.suptitle(title_h)
         save_plot(fig_h, name, i, "H", logging, savefig)
 
-        # 9) Gridded predictions with context points
-        title_i = f"Gridded Predictions NC={nc} P={N_POINTS * N_POINTS:,} - {batch_time_str}"
-        fig_i, ax_i = init_earth_fig(title_i, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
-        pcm = ax_i.pcolormesh(lon_mesh, lat_mesh, predicted_grid_points, cmap="coolwarm", shading="auto")
-        cbar = fig_c.colorbar(pcm, ax=ax_i, orientation="vertical", pad=0.05)
-        cbar.set_label("Temperature (°C)")
-        ax_i.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
-        ax_i.legend()
-        save_plot(fig_c, name, i, "I", logging, savefig)
+        if huge_grid_plots:
+            # 9) Gridded predictions with context points
+            title_i = f"Gridded Predictions NC={nc} P={N_POINTS * N_POINTS:,} - {batch_time_str}"
+            fig_i, ax_i = init_earth_fig(title_i, figsize, proj, batch_pred.lat_range, batch_pred.long_range, height_data)
+            pcm = ax_i.pcolormesh(lon_mesh, lat_mesh, predicted_grid_points, cmap="coolwarm", shading="auto")
+            cbar = fig_c.colorbar(pcm, ax=ax_i, orientation="vertical", pad=0.05)
+            cbar.set_label("Temperature (°C)")
+            ax_i.scatter(long_ctx, lat_ctx, c="k", s=10, label="Context")
+            ax_i.legend()
+            save_plot(fig_c, name, i, "I", logging, savefig)
 
 # Converts number of hours since 1st Jan 1931 into a formatted string
 def convert_time_to_str(unnorm_time: int):
@@ -267,7 +271,7 @@ def save_plot(fig, name, i, panel, logging, savefig):
         save_name = base_folder + f"/{i:03d}_{panel}.png"
         if not os.path.isdir(base_folder):
             os.makedirs(base_folder)
-        fig.savefig(out / f"{i:03d}_{panel}.png", bbox="tight")
+        fig.savefig(save_name, bbox_inches="tight")
     else:
         plt.show()
     plt.close(fig)
