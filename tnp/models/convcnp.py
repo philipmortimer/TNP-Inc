@@ -27,7 +27,8 @@ class ConvCNPEncoder(nn.Module):
         self.grid_decoder = grid_decoder
         self.z_encoder = z_encoder
 
-        self.hadisd_mode = hadisd_mode # hadisd is psecial case
+        self.hadisd_mode = hadisd_mode # hadisd is special case
+        self.fourier_encoder = fourier_encoder
 
     @check_shapes(
         "xc: [m, nc, dx]",
@@ -43,8 +44,10 @@ class ConvCNPEncoder(nn.Module):
             elev = xc[..., 2:3]
             time = xc[..., 3:4]
             # Passes these features into fourier embedder
+            elev_time_vec = torch.cat((elev, time), dim=-1)
+            elev_time_fourier = self.fourier_encoder(elev_time_vec)
             
-            z_feats = torch.cat((yc, flag, time, elev), dim=-1) 
+            z_feats = torch.cat((yc, flag, elev_time_fourier), dim=-1) 
             xc_coords = xc[..., :2] # Cuts out time and elevation for CNN
             xt_coords = xt[..., :2]    
 

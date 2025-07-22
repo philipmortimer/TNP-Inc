@@ -42,6 +42,7 @@ convcnp_encoder:
   grid_decoder: ${grid_decoder}
   z_encoder: ${z_encoder}
   hadisd_mode: true
+  fourier_encoder: ${fourier_encoder}
 
 cnn:
   _target_: tnp.networks.cnn.CNN
@@ -63,7 +64,7 @@ grid_decoder:
 
 z_encoder:
   _target_: tnp.networks.mlp.MLP
-  in_dim: 4 # In dim changed
+  in_dim: ${eval:'2 + ${params.time_embed_dims} + ${params.elev_embed_dims}'} # In dim changed
   out_dim: ${params.num_channels}
   num_layers: 2
   width: ${params.num_channels}
@@ -75,8 +76,8 @@ tnp_decoder:
 fourier_encoder:
   _target_: tnp.networks.fourier_embed.FourierEmbedderHadISD
   embed_dim_lambdamin_lambda_max:
-    - ${params.time_emb_lmin_lmax}
     - ${params.elev_emb_lmin_lmax}
+    - ${params.time_emb_lmin_lmax}
 
 z_decoder:
   _target_: tnp.networks.mlp.MLP
