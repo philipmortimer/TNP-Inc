@@ -15,6 +15,7 @@ class ConvCNPEncoder(nn.Module):
         grid_encoder: SetConvGridEncoder,
         grid_decoder: SetConvGridDecoder,
         z_encoder: nn.Module,
+        hadisd_mode: bool = False, 
     ):
         super().__init__()
 
@@ -22,6 +23,8 @@ class ConvCNPEncoder(nn.Module):
         self.grid_encoder = grid_encoder
         self.grid_decoder = grid_decoder
         self.z_encoder = z_encoder
+
+        self.hadisd_mode = hadisd_mode # hadisd is psecial case
 
     @check_shapes(
         "xc: [m, nc, dx]",
@@ -32,21 +35,35 @@ class ConvCNPEncoder(nn.Module):
     def forward(
         self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor
     ) -> torch.Tensor:
-        # Add density.
-        yc = torch.cat((yc, torch.ones(yc.shape[:-1] + (1,)).to(yc)), dim=-1)
+        if self.hadisd_mode: # handles this data type in a bespoke way - hacky but quick cos input is 4d
+            flag = torch.ones_like(yc[..., :1])
+            elev = xc[..., 2:3]
+            time = xc[..., 3:4]
+            z_feats = torch.cat((yc, flag, time, elev), dim=-1) 
+            xc_coords = xc[..., :2] # Cuts out time and elevation for CNN
+            xt_coords = xt[..., :2]    
 
-        # Encode to grid.
-        x_grid, z_grid = self.grid_encoder(xc, yc)
+            x_grid, z_grid = self.grid_encoder(xc_coords, z_feats)
+            z_grid = self.z_encoder(z_grid)
+            z_grid = self.conv_net(z_grid)
+            zt = self.grid_decoder(x_grid, z_grid, xt_coords)
+            return zt
+        else: # Original path
+            # Add density.
+            yc = torch.cat((yc, torch.ones(yc.shape[:-1] + (1,)).to(yc)), dim=-1)
 
-        # Encode to z.
-        z_grid = self.z_encoder(z_grid)
+            # Encode to grid.
+            x_grid, z_grid = self.grid_encoder(xc, yc)
 
-        # Convolve.
-        z_grid = self.conv_net(z_grid)
+            # Encode to z.
+            z_grid = self.z_encoder(z_grid)
 
-        # Decode.
-        zt = self.grid_decoder(x_grid, z_grid, xt)
-        return zt
+            # Convolve.
+            z_grid = self.conv_net(z_grid)
+
+            # Decode.
+            zt = self.grid_decoder(x_grid, z_grid, xt)
+            return zt
 
 
 class GriddedConvCNPEncoder(nn.Module):

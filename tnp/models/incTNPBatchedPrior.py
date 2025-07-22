@@ -113,7 +113,7 @@ class IncTNPBatchedEncoderPrior(nn.Module):
         return self.transformer_encoder.query(zt, kv_cache)
 
     @check_shapes(
-        "x: [m, n, dx]", "y: [m, n, dy]","return: [m, n_minus_one, dz]"
+        "x: [m, n, dx]", "y: [m, n, dy]","return: [m, n, dz]"
     )
     def train_encoder(self, x: torch.Tensor, y:torch.Tensor):
         m, n, dy = y.shape

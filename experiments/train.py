@@ -143,6 +143,22 @@ def main():
             @rank_zero_only
             def on_fit_end(self, trainer, pl_module):
                 print("Running final test on model")
+                test_loader = torch.utils.data.DataLoader(
+                    experiment.generators.test,
+                    batch_size=None,
+                    num_workers=experiment.misc.num_val_workers,
+                    worker_init_fn=(
+                        (
+                            experiment.misc.worker_init_fn
+                            if hasattr(experiment.misc, "worker_init_fn")
+                            else adjust_num_batches
+                        )
+                        if experiment.misc.num_val_workers > 0
+                        else None
+                    ),
+                    persistent_workers=True if experiment.misc.num_val_workers > 0 else False,
+                    pin_memory=True,
+                )
                 wandb_run = trainer.logger.experiment
                 test_model(pl_module, self.experiment, wandb_run=wandb_run)
 

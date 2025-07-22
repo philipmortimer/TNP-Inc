@@ -30,45 +30,15 @@ generators:
     data_directory: ${params.test_path}
 
 model:
-  _target_: tnp.models.tnp.TNP
-  encoder: ${tnp_encoder}
+  _target_: tnp.models.cnp.CNP
+  encoder: ${cnp_encoder}
   decoder: ${tnp_decoder}
   likelihood: ${likelihood}
 
-tnp_encoder:
-  _target_: tnp.models.tnp.TNPEncoder
-  transformer_encoder: ${transformer_encoder}
-  xy_encoder: ${xy_encoder}
+cnp_encoder:
+  _target_: tnp.models.cnp.CNPEncoder
+  deepset: ${deepset}
   x_encoder: ${x_encoder}
-
-transformer_encoder:
-  _target_: tnp.networks.transformer.TNPTransformerEncoder
-  mhsa_layer: ${mhsa_layer}
-  mhca_layer: ${mhca_layer}
-  num_layers: ${params.num_layers}
-
-mhsa_layer:
-  _target_: tnp.networks.attention_layers.MultiHeadSelfAttentionLayer
-  embed_dim: ${params.embed_dim}
-  num_heads: ${params.num_heads}
-  head_dim: ${params.head_dim}
-  feedforward_dim: ${params.embed_dim}
-  norm_first: ${params.norm_first}
-
-mhca_layer:
-  _target_: tnp.networks.attention_layers.MultiHeadCrossAttentionLayer
-  embed_dim: ${params.embed_dim}
-  num_heads: ${params.num_heads}
-  head_dim: ${params.head_dim}
-  feedforward_dim: ${params.embed_dim}
-  norm_first: ${params.norm_first}
-
-xy_encoder:
-  _target_: tnp.networks.mlp.MLP
-  in_dim: ${eval:'1 + ${params.dim_y} + ${params.lat_embed_dims} + ${params.lon_embed_dims} + ${params.time_embed_dims} + ${params.elev_embed_dims}'}
-  out_dim: ${params.embed_dim}
-  num_layers: 2
-  width: ${params.embed_dim}
 
 x_encoder:
   _target_: tnp.networks.fourier_embed.FourierEmbedderHadISD
@@ -78,15 +48,27 @@ x_encoder:
     - ${params.time_emb_lmin_lmax}
     - ${params.elev_emb_lmin_lmax}
 
+deepset:
+  _target_: tnp.networks.deepset.DeepSet
+  z_encoder: ${z_encoder}
+  agg: mean
+
+z_encoder:
+  _target_: tnp.networks.mlp.MLP
+  in_dim: ${eval:'${params.dim_y} + ${params.lat_embed_dims} + ${params.lon_embed_dims} + ${params.time_embed_dims} + ${params.elev_embed_dims}'}
+  out_dim: ${params.embed_dim}
+  num_layers: ${params.num_layers}
+  width: ${params.embed_dim}
+
 tnp_decoder:
   _target_: tnp.models.tnp.TNPDecoder
   z_decoder: ${z_decoder}
 
 z_decoder:
   _target_: tnp.networks.mlp.MLP
-  in_dim: ${params.embed_dim}
-  out_dim: ${eval:'2 * ${params.dim_y}'}
-  num_layers: 2
+  in_dim: ${eval:'${params.lat_embed_dims} + ${params.lon_embed_dims} + ${params.time_embed_dims} + ${params.elev_embed_dims} + ${params.embed_dim}'}
+  out_dim: ${eval:'${params.dim_y} * 2'}
+  num_layers: ${params.num_layers}
   width: ${params.embed_dim}
 
 likelihood:
@@ -141,8 +123,8 @@ params:
   test_path: "/scratch/pm846/TNP/data/data_processed/test"
 
 misc:
-  project: plain-tnp-had
-  name: plain-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
+  project: cnp-had
+  name: CNP-L${params.num_layers}-D${params.embed_dim}
   resume_from_checkpoint: null
   gradient_clip_val: 0.5
 

@@ -30,53 +30,43 @@ generators:
     data_directory: ${params.test_path}
 
 model:
-  _target_: tnp.models.tnp.TNP
-  encoder: ${tnp_encoder}
+  _target_: tnp.models.convcnp.ConvCNP
+  encoder: ${convcnp_encoder}
   decoder: ${tnp_decoder}
   likelihood: ${likelihood}
 
-tnp_encoder:
-  _target_: tnp.models.tnp.TNPEncoder
-  transformer_encoder: ${transformer_encoder}
-  xy_encoder: ${xy_encoder}
-  x_encoder: ${x_encoder}
+convcnp_encoder:
+  _target_: tnp.models.convcnp.ConvCNPEncoder
+  conv_net: ${cnn}
+  grid_encoder: ${grid_encoder}
+  grid_decoder: ${grid_decoder}
+  z_encoder: ${z_encoder}
+  hadisd_mode: true
 
-transformer_encoder:
-  _target_: tnp.networks.transformer.TNPTransformerEncoder
-  mhsa_layer: ${mhsa_layer}
-  mhca_layer: ${mhca_layer}
-  num_layers: ${params.num_layers}
+cnn:
+  _target_: tnp.networks.cnn.CNN
+  dim: 2 # Changed from gp case
+  num_channels: ${params.num_channels}
+  num_blocks: ${params.num_blocks}
+  kernel_size: ${params.kernel_size}
 
-mhsa_layer:
-  _target_: tnp.networks.attention_layers.MultiHeadSelfAttentionLayer
-  embed_dim: ${params.embed_dim}
-  num_heads: ${params.num_heads}
-  head_dim: ${params.head_dim}
-  feedforward_dim: ${params.embed_dim}
-  norm_first: ${params.norm_first}
+grid_encoder:
+  _target_: tnp.networks.setconv.SetConvGridEncoder
+  dims: 2 # Changed from gp case
+  grid_range: ${params.grid_range}
+  grid_shape: ${params.grid_shape}
+  init_lengthscale: ${params.init_lengthscale}
 
-mhca_layer:
-  _target_: tnp.networks.attention_layers.MultiHeadCrossAttentionLayer
-  embed_dim: ${params.embed_dim}
-  num_heads: ${params.num_heads}
-  head_dim: ${params.head_dim}
-  feedforward_dim: ${params.embed_dim}
-  norm_first: ${params.norm_first}
+grid_decoder:
+  _target_: tnp.networks.setconv.SetConvGridDecoder
+  dims: 2 # Changed from gp case
 
-xy_encoder:
+z_encoder:
   _target_: tnp.networks.mlp.MLP
-  in_dim: ${eval:'1 + ${params.dim_y} + ${params.lat_embed_dims} + ${params.lon_embed_dims} + ${params.time_embed_dims} + ${params.elev_embed_dims}'}
-  out_dim: ${params.embed_dim}
+  in_dim: 4 # In dim changed
+  out_dim: ${params.num_channels}
   num_layers: 2
-  width: ${params.embed_dim}
-
-x_encoder:
-  _target_: tnp.networks.fourier_embed.FourierEmbedderHadISD
-  embed_dim_lambdamin_lambda_max:
-    - ${params.lat_emb_lmin_lmax}
-    - ${params.lon_emb_lmin_lmax}
-    - ${params.time_emb_lmin_lmax}
-    - ${params.elev_emb_lmin_lmax}
+  width: ${params.num_channels}
 
 tnp_decoder:
   _target_: tnp.models.tnp.TNPDecoder
@@ -84,10 +74,10 @@ tnp_decoder:
 
 z_decoder:
   _target_: tnp.networks.mlp.MLP
-  in_dim: ${params.embed_dim}
+  in_dim: ${params.num_channels}
   out_dim: ${eval:'2 * ${params.dim_y}'}
   num_layers: 2
-  width: ${params.embed_dim}
+  width: ${params.num_channels}
 
 likelihood:
   _target_: tnp.likelihoods.gaussian.HeteroscedasticNormalLikelihood
@@ -100,33 +90,16 @@ optimiser:
 params:
   # Model + Training Params
   epochs: 200
-  embed_dim: 128
-  num_heads: 8
-  head_dim: 16
-  norm_first: True
-  num_layers: 5
+  num_channels: 32
+  num_blocks: 5
+  kernel_size: 9
+  num_decoder_kernels: 5
+  grid_range:
+    - [-1.0, 1.0]
+    - [-1.0, 1.0]
+  grid_shape: [50, 50] # Grid res hyper
+  init_lengthscale: 0.1
 
-  # Embedding dimensions for x encoder
-  lat_embed_dims: 32
-  lon_embed_dims: 32
-  time_embed_dims: 32
-  elev_embed_dims: 32
-  lat_emb_lmin_lmax: # lat is [-1, 1]
-    - ${params.lat_embed_dims}
-    - 0.001
-    - 2.0
-  lon_emb_lmin_lmax: # long is [-1, 1]
-    - ${params.lon_embed_dims}
-    - 0.001
-    - 2.0
-  time_emb_lmin_lmax: # 8760 = 24 * 365 (i.e hours in a year)
-    - ${params.time_embed_dims}
-    - 1.0
-    - 8760.0
-  elev_emb_lmin_lmax: # Elevation is z normalised. for current patch 7.7 sigma is the most extreme elev
-    - ${params.elev_embed_dims}
-    - 0.1
-    - 8.0
 
   # Fixed constants known
   dim_x: 4
@@ -141,8 +114,8 @@ params:
   test_path: "/scratch/pm846/TNP/data/data_processed/test"
 
 misc:
-  project: plain-tnp-had
-  name: plain-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
+  project: convcnp-had
+  name: ConvCNP-L${params.num_blocks}-C${params.num_channels}-K${params.kernel_size}-GS${params.grid_shape}
   resume_from_checkpoint: null
   gradient_clip_val: 0.5
 

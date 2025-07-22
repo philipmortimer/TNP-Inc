@@ -30,19 +30,19 @@ generators:
     data_directory: ${params.test_path}
 
 model:
-  _target_: tnp.models.tnp.TNP
+  _target_: tnp.models.castnp.TNPCausal
   encoder: ${tnp_encoder}
   decoder: ${tnp_decoder}
   likelihood: ${likelihood}
 
 tnp_encoder:
-  _target_: tnp.models.tnp.TNPEncoder
+  _target_: tnp.models.castnp.TNPEncoderMasked
   transformer_encoder: ${transformer_encoder}
   xy_encoder: ${xy_encoder}
   x_encoder: ${x_encoder}
 
 transformer_encoder:
-  _target_: tnp.networks.transformer.TNPTransformerEncoder
+  _target_: tnp.networks.transformer.TNPTransformerMaskedEncoder
   mhsa_layer: ${mhsa_layer}
   mhca_layer: ${mhca_layer}
   num_layers: ${params.num_layers}
@@ -141,8 +141,8 @@ params:
   test_path: "/scratch/pm846/TNP/data/data_processed/test"
 
 misc:
-  project: plain-tnp-had
-  name: plain-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
+  project: mask-tnp-had
+  name: mask-TNP-L${params.num_layers}-H${params.num_heads}-D${params.embed_dim}
   resume_from_checkpoint: null
   gradient_clip_val: 0.5
 
