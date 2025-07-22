@@ -186,7 +186,7 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
 
 # -------------------------------------------------------------------------------------------------------
 
-# Measures timings of different models
+# Measures timings of different models - this from some perspecticves is v similar to ar.py (doesnt use dataset per se)
 def measure_perf_timings():
     # Measure hypers
     burn_in = 1 # Number of burn in runs to ignore
@@ -269,7 +269,7 @@ def plot_ar_unrolls():
     huge_grid_plots = False # Whether to plot enormous grid prediction - very slow computationally for AR
     order="random"
     #no_samples = [1, 2, 5, 10, 50, 100, 500, 1000]
-    no_samples = [1, 2, 10]
+    no_samples = [1, 2, 10, 50]
     folder_name = "experiments/plot_results/hadar/plots/"
     no_kernels = 5#20
     device="cuda"
@@ -318,7 +318,7 @@ def get_had_testset_and_plot_stuff():
     min_nc = 1
     max_nc = 2033
     nt = 250
-    samples_per_epoch= 500
+    samples_per_epoch= 80_000
     batch_size = 32
     deterministic = True
     ordering_strategy = "random"
@@ -401,6 +401,6 @@ def compare_had_models(base_out_txt_file: str, device: str = "cuda"):
 
 
 if __name__ == "__main__":
-    #compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp")
+    compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp")
     plot_ar_unrolls()
     measure_perf_timings()
