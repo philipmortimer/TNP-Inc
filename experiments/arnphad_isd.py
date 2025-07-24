@@ -354,18 +354,20 @@ def get_had_testset_and_plot_stuff():
 def get_model_list():
     # List of models to compare
     tnp_plain = ('experiments/configs/hadISD/had_tnp_plain.yml',
-        'pm846-university-of-cambridge/plain-tnp-had/model-o9r9hpyp:v13', 'TNP-D')
+        'pm846-university-of-cambridge/plain-tnp-had/model-o20d6s1q:v99', 'TNP-D')
     incTNP = ('experiments/configs/hadISD/had_incTNP.yml', 
-        '', 'incTNP')
+        'pm846-university-of-cambridge/mask-tnp-had/model-9w1vbqjh:v99', 'incTNP')
     batchedTNP = ('experiments/configs/hadISD/had_incTNP_batched.yml',
-        '', 'incTNP-Batched')
+        'pm846-university-of-cambridge/mask-batched-tnp-had/model-z5nlguxq:v99', 'incTNP-Batched')
     priorBatched = ('experiments/configs/hadISD/had_incTNP_priorbatched.yml',
-        '', 'incTNP-Batched (Prior)')
+        'pm846-university-of-cambridge/mask-priorbatched-tnp-had/model-83h4gpp2:v99', 'incTNP-Batched (Prior)')
+    lbanp =('experiments/configs/hadISD/had_lbanp.yml', 'LBANP',
+        'pm846-university-of-cambridge/lbanp-had/model-zyzq4mno:v99')
     cnp = ('experiments/configs/hadISD/had_cnp.yml',
-        '', 'CNP')
+        'pm846-university-of-cambridge/cnp-had/model-suqmhf9v:v99', 'CNP')
     conv_cnp = ('experiments/configs/hadISD/had_convcnp.yml',
-        '', 'ConvCNP')
-    models = [tnp_plain]
+        'pm846-university-of-cambridge/convcnp-had/model-p4f775ey:v98', 'ConvCNP')    
+    models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
     return models
 
 # Compares NP models in AR mode on RBF set
