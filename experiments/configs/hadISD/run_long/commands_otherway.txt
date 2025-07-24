@@ -3,6 +3,4 @@ python /homes/pm846/Thesis/Code/TNP-Inc/experiments/train.py --config /homes/pm8
 python /homes/pm846/Thesis/Code/TNP-Inc/experiments/train.py --config /homes/pm846/Thesis/Code/TNP-Inc/experiments/configs/hadISD/had_lbanp.yml > /scratch/pm846/TNP/runs/lbanp_other.out 2>&1
 python /homes/pm846/Thesis/Code/TNP-Inc/experiments/train.py --config /homes/pm846/Thesis/Code/TNP-Inc/experiments/configs/hadISD/had_cnp.yml > /scratch/pm846/TNP/runs/cnp_other.out 2>&1
 python /homes/pm846/Thesis/Code/TNP-Inc/experiments/train.py --config /homes/pm846/Thesis/Code/TNP-Inc/experiments/configs/hadISD/had_tnp_plain.yml > /scratch/pm846/TNP/runs/tnp_plain_other.out 2>&1
-python /homes/pm846/Thesis/Code/TNP-Inc/experiments/train.py --config /homes/pm846/Thesis/Code/TNP-Inc/experiments/configs/hadISD/had_incTNP.yml > /scratch/pm846/TNP/runs/inc_tnp_other.out 2>&1
-python /homes/pm846/Thesis/Code/TNP-Inc/experiments/train.py --config /homes/pm846/Thesis/Code/TNP-Inc/experiments/configs/hadISD/had_incTNP_batched.yml > /scratch/pm846/TNP/runs/inc_tnpbatched_other.out 2>&1
-python /homes/pm846/Thesis/Code/TNP-Inc/experiments/train.py --config /homes/pm846/Thesis/Code/TNP-Inc/experiments/configs/hadISD/had_tnp_plain.yml > /scratch/pm846/TNP/runs/tnp_plain_other.out 2>&1
+python /homes/pm846/Thesis/Code/TNP-Inc/experiments/train.py --config /homes/pm846/Thesis/Code/TNP-Inc/experiments/configs/hadISD/had_inctnpa.yml > /scratch/pm846/TNP/runs/inctnpa.out 2>&1

@@ -354,7 +354,7 @@ def get_had_testset_and_plot_stuff():
 def get_model_list():
     # List of models to compare
     tnp_plain = ('experiments/configs/hadISD/had_tnp_plain.yml',
-        'pm846-university-of-cambridge/plain-tnp-had/model-o20d6s1q:v99', 'TNP-D')
+        'pm846-university-of-cambridge/plain-tnp-had/model-d4n3npvh:v99', 'TNP-D')
     incTNP = ('experiments/configs/hadISD/had_incTNP.yml', 
         'pm846-university-of-cambridge/mask-tnp-had/model-9w1vbqjh:v99', 'incTNP')
     batchedTNP = ('experiments/configs/hadISD/had_incTNP_batched.yml',
