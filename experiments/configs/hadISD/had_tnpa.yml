@@ -40,6 +40,7 @@ tnp_encoder:
   _target_: tnp.models.tnpa.ARTNPEncoder
   transformer_encoder: ${transformer_encoder}
   xy_encoder: ${xy_encoder}
+  x_encoder: ${x_encoder}
 
 transformer_encoder:
   _target_: tnp.networks.transformer.TransformerEncoder

@@ -382,6 +382,8 @@ def compare_had_models(base_out_txt_file: str, device: str = "cuda"):
     for (model_yml, model_wab, model_name) in models:
         ll_list, rmse_list = [], []
         model = get_model(model_yml, model_wab, seed=False, device=device)
+        print("Model loaded")
+        continue
         model.eval()
         for batch in tqdm(data, desc=f'{model_name} eval'):
             ll, rmse = ar_metrics(np_model=model, xc=batch.xc.to(device), yc=batch.yc.to(device),
@@ -398,6 +400,7 @@ def compare_had_models(base_out_txt_file: str, device: str = "cuda"):
         mod_sum = ("-" * 20) + f"\nModel: {model_name}\nMean LL: {ll_average} STD LL: {ll_std} Mean RMSE: {rmse_average} STD RMSE: {rmse_std}\n"
         print(mod_sum)
         out_txt += mod_sum
+    exit(0)
     with open(base_out_txt_file + f'_{ordering}.txt', 'w') as file:
         file.write(out_txt)
 
