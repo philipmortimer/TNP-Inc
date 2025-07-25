@@ -9,6 +9,7 @@ artifacts/
 datasets/
 notebooks/
 lightning_logs/
+experiments/data_temp/csd3_all_data/
 
 # Slurm files
 /slurm-*.out
