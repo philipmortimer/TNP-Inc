@@ -85,7 +85,7 @@ def main():
 
     lit_model = experiment.lit_model
 
-    test_model(lit_model, experiment)
+    test_model(lit_model, experiment, wandb_run=wandb.run)
 
 
 if __name__ == "__main__":

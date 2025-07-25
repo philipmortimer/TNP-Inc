@@ -354,20 +354,21 @@ def get_had_testset_and_plot_stuff():
 def get_model_list():
     # List of models to compare
     tnp_plain = ('experiments/configs/hadISD/had_tnp_plain.yml',
-        'pm846-university-of-cambridge/plain-tnp-had/model-d4n3npvh:v99', 'TNP-D')
+        'pm846-university-of-cambridge/plain-tnp-had/model-o20d6s1q:v99', 'TNP-D')
     incTNP = ('experiments/configs/hadISD/had_incTNP.yml', 
         'pm846-university-of-cambridge/mask-tnp-had/model-9w1vbqjh:v99', 'incTNP')
     batchedTNP = ('experiments/configs/hadISD/had_incTNP_batched.yml',
         'pm846-university-of-cambridge/mask-batched-tnp-had/model-z5nlguxq:v99', 'incTNP-Batched')
     priorBatched = ('experiments/configs/hadISD/had_incTNP_priorbatched.yml',
         'pm846-university-of-cambridge/mask-priorbatched-tnp-had/model-83h4gpp2:v99', 'incTNP-Batched (Prior)')
-    lbanp =('experiments/configs/hadISD/had_lbanp.yml', 'LBANP',
-        'pm846-university-of-cambridge/lbanp-had/model-zyzq4mno:v99')
+    lbanp =('experiments/configs/hadISD/had_lbanp.yml',
+        'pm846-university-of-cambridge/lbanp-had/model-zyzq4mno:v99', 'LBANP',)
     cnp = ('experiments/configs/hadISD/had_cnp.yml',
         'pm846-university-of-cambridge/cnp-had/model-suqmhf9v:v99', 'CNP')
     conv_cnp = ('experiments/configs/hadISD/had_convcnp.yml',
         'pm846-university-of-cambridge/convcnp-had/model-p4f775ey:v98', 'ConvCNP')    
     models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
+    models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
     return models
 
 # Compares NP models in AR mode on RBF set
@@ -382,8 +383,6 @@ def compare_had_models(base_out_txt_file: str, device: str = "cuda"):
     for (model_yml, model_wab, model_name) in models:
         ll_list, rmse_list = [], []
         model = get_model(model_yml, model_wab, seed=False, device=device)
-        print("Model loaded")
-        continue
         model.eval()
         for batch in tqdm(data, desc=f'{model_name} eval'):
             ll, rmse = ar_metrics(np_model=model, xc=batch.xc.to(device), yc=batch.yc.to(device),
@@ -400,7 +399,6 @@ def compare_had_models(base_out_txt_file: str, device: str = "cuda"):
         mod_sum = ("-" * 20) + f"\nModel: {model_name}\nMean LL: {ll_average} STD LL: {ll_std} Mean RMSE: {rmse_average} STD RMSE: {rmse_std}\n"
         print(mod_sum)
         out_txt += mod_sum
-    exit(0)
     with open(base_out_txt_file + f'_{ordering}.txt', 'w') as file:
         file.write(out_txt)
 

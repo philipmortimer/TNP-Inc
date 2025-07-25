@@ -15,6 +15,8 @@ from tnp.data.hadISD import HadISDDataGenerator
 from eval import test_model
 from lightning.pytorch.utilities import rank_zero_only
 from data_temp.data_processing.elevations import get_cached_elevation_grid
+from tnp.models.tnpa import TNPA
+from tnp.models.incTNPa import incTNPA
 
 
 def main():
@@ -84,6 +86,8 @@ def main():
 
     def plot_fn_hadISD(model, batches, name):
         is_training = model.training
+        huge_grid_plots = False if isinstance(model, TNPA) or isinstance(model, incTNPA) else True # TNPA models just too expensive to do the 40 k grid point plots every epoch on CBL GPUs
+        #print(f"Huge grid plots {huge_grid_plots}")
         model.eval()
         plot_hadISD(
             model=model,
@@ -94,6 +98,7 @@ def main():
             lat_mesh=lat_mesh,
             lon_mesh=lon_mesh,
             elev_np=elev_np,
+            huge_grid_plots=huge_grid_plots,
         )
         if is_training: model.train()
 
