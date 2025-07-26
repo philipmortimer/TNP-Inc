@@ -367,8 +367,9 @@ def get_model_list():
         'pm846-university-of-cambridge/cnp-had/model-suqmhf9v:v99', 'CNP')
     conv_cnp = ('experiments/configs/hadISD/had_convcnp.yml',
         'pm846-university-of-cambridge/convcnp-had/model-p4f775ey:v98', 'ConvCNP')    
-    models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
-    models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
+    #models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
+    #models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
+    models = [tnp_plain, conv_cnp, batchedTNP, cnp]
     return models
 
 # Compares NP models in AR mode on RBF set
@@ -404,6 +405,6 @@ def compare_had_models(base_out_txt_file: str, device: str = "cuda"):
 
 
 if __name__ == "__main__":
-    compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp")
-    plot_ar_unrolls()
+    #compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp")
+    #plot_ar_unrolls()
     measure_perf_timings()
