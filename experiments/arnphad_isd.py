@@ -412,6 +412,10 @@ def get_had_testset_and_plot_stuff():
     data_directory = "/scratch/pm846/TNP/data/data_processed/test"
     dem_path = "/scratch/pm846/TNP/data/elev_data/ETOPO_2022_v1_60s_N90W180_surface.nc"
     cache_dem_dir = "/scratch/pm846/TNP/data/elev_data/"
+
+    data_directory = "/home/pm846/rds/hpc-work/Thesis/TNP-Inc/experiments/data_temp/csd3_all_data/downloaded/other/data_processed/test"
+    dem_path = "/home/pm846/rds/hpc-work/Thesis/TNP-Inc/experiments/data_temp/csd3_all_data/downloaded/other/elev_data/ETOPO_2022_v1_60s_N90W180_surface.nc"
+    cache_dem_dir = "/home/pm846/rds/hpc-work/Thesis/TNP-Inc/experiments/data_temp/csd3_all_data/downloaded/other/elev_data/"
     num_grid_points_plot = 200
     # Normal hypers
     min_nc = 1
@@ -425,7 +429,7 @@ def get_had_testset_and_plot_stuff():
 
     # Loads had dataset
     gen_test = HadISDDataGenerator(min_nc=min_nc, max_nc=max_nc, nt=nt, ordering_strategy=ordering_strategy,
-        samples_per_epoch=samples_per_epoch, batch_size=batch_size, data_directory=data_directory)
+        samples_per_epoch=samples_per_epoch, batch_size=batch_size, data_directory=data_directory,deterministic=deterministic)
     
     # Wraps data set in a proper torch set loader for less IO bottlenecking
     test_loader = torch.utils.data.DataLoader(
@@ -452,54 +456,91 @@ def get_had_testset_and_plot_stuff():
 
 def get_model_list():
     # List of models to compare
-    tnp_plain = ('experiments/configs/hadISD/had_tnp_plain.yml',
+    tnp_plain = ('experiments/configs/hadISD_csd3/had_tnp_plain.yml',
         'pm846-university-of-cambridge/plain-tnp-had/model-o20d6s1q:v99', 'TNP-D')
-    incTNP = ('experiments/configs/hadISD/had_incTNP.yml', 
+    incTNP = ('experiments/configs/hadISD_csd3/had_incTNP.yml', 
         'pm846-university-of-cambridge/mask-tnp-had/model-9w1vbqjh:v99', 'incTNP')
-    batchedTNP = ('experiments/configs/hadISD/had_incTNP_batched.yml',
+    batchedTNP = ('experiments/configs/hadISD_csd3/had_incTNP_batched.yml',
         'pm846-university-of-cambridge/mask-batched-tnp-had/model-z5nlguxq:v99', 'incTNP-Batched')
-    priorBatched = ('experiments/configs/hadISD/had_incTNP_priorbatched.yml',
+    priorBatched = ('experiments/configs/hadISD_csd3/had_incTNP_priorbatched.yml',
         'pm846-university-of-cambridge/mask-priorbatched-tnp-had/model-83h4gpp2:v99', 'incTNP-Batched (Prior)')
-    lbanp =('experiments/configs/hadISD/had_lbanp.yml',
+    lbanp =('experiments/configs/hadISD_csd3/had_lbanp.yml',
         'pm846-university-of-cambridge/lbanp-had/model-zyzq4mno:v99', 'LBANP',)
-    cnp = ('experiments/configs/hadISD/had_cnp.yml',
+    cnp = ('experiments/configs/hadISD_csd3/had_cnp.yml',
         'pm846-university-of-cambridge/cnp-had/model-suqmhf9v:v99', 'CNP')
-    conv_cnp = ('experiments/configs/hadISD/had_convcnp.yml',
+    conv_cnp = ('experiments/configs/hadISD_csd3/had_convcnp.yml',
         'pm846-university-of-cambridge/convcnp-had/model-p4f775ey:v98', 'ConvCNP (50 x 50)')
-    conv_cnp_100 = ('experiments/configs/hadISD/alt_variants/had_big_convcnp.yml',
+    conv_cnp_100 = ('experiments/configs/hadISD_csd3/alt_variants/had_big_convcnp.yml',
         'pm846-university-of-cambridge/convcnp-had/model-ecytkrfq:v99', 'ConvCNP (100 x 100)')
+    conv_cnp_125 = ('experiments/configs/hadISD_csd3/alt_variants/had_125_convcnp.yml',
+        'pm846-university-of-cambridge/convcnp-had/sa1sz4c9:v99', 'ConvCNP (125 x 125)')
+    conv_cnp_150 = ('experiments/configs/hadISD_csd3/alt_variants/had_between_convcnp.yml',
+        'pm846-university-of-cambridge/convcnp-had/s8gzetnn:v99', 'ConvCNP (150 x 150)')
     #models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
     #models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
+    all_models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp, conv_cnp_100, conv_cnp_125, conv_cnp_150]
     models = [tnp_plain, conv_cnp, batchedTNP, cnp]
     models = [priorBatched, cnp, conv_cnp]
     return models
 
 # Compares NP models in AR mode on RBF set
-def compare_had_models(base_out_txt_file: str, device: str = "cuda"):
+def compare_had_models(base_out_txt_file: str, rollout_rmse: bool, device: str = "cuda"):
     # Hypers to select - also look at dataset hypers
     ordering = "random"
+    num_samples = 50
+    prioritise_fixed = True
+    use_flash = False
+    max_no_batches = None # None for whole test set
     # End of hypers
     # Main loop - loads each model than compares writes performances to a text file
     models = get_model_list()
     data, lat_mesh, lon_mesh, elev_np = get_had_testset_and_plot_stuff()
     out_txt = ""
+    starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
     for (model_yml, model_wab, model_name) in models:
         ll_list, rmse_list = [], []
+        rmse_unroll_list = []
+        tot_time_unroll = 0
         model = get_model(model_yml, model_wab, seed=False, device=device)
         model.eval()
+        batch_i = 0
         for batch in tqdm(data, desc=f'{model_name} eval'):
-            ll, rmse = ar_metrics(np_model=model, xc=batch.xc.to(device), yc=batch.yc.to(device),
-                xt=batch.xt.to(device), yt=batch.yt.to(device), normalise=True, order=ordering)
+            with torch.no_grad():
+                ll, rmse = ar_metrics(np_model=model, xc=batch.xc.to(device), yc=batch.yc.to(device),
+                    xt=batch.xt.to(device), yt=batch.yt.to(device), normalise=True, order=ordering)
+                if rollout_rmse:
+                    torch.cuda.synchronize()
+                    starter.record()
+                    pred_dist = ar_predict(model=model, xc=batch.xc.to(device), yc=batch.yc.to(device), xt=batch.xt.to(device),
+                        order=ordering, num_samples=num_samples,
+                        device=device, device_ret=device, prioritise_fixed=prioritise_fixed, use_flash=use_flash)
+                    ender.record()
+                    torch.cuda.synchronize()
+                    runtime_ms_unroll = starter.elapsed_time(ender)
+                    tot_time_unroll += runtime_ms_unroll
+                    rmse_rollout = torch.sqrt((pred_dist.mean - batch.yt.to(device)).pow(2).mean(dim=(-2, -1))) 
+            if rollout_rmse:
+                mean_rmse_unroll = torch.mean(rmse_rollout).item()
+                rmse_unroll_list.append(mean_rmse_unroll)
             mean_ll = torch.mean(ll).item() # Goes from [m] to a float
             mean_rmse = torch.mean(rmse).item()
             ll_list.append(mean_ll)
             rmse_list.append(mean_rmse)
+            if max_no_batches is not None and  batch_i + 1 >= max_no_batches: break
+            batch_i += 1
         ll_average = np.mean(ll_list)
         ll_std = np.std(ll_list) / np.sqrt(len(ll_list))
+        if rollout_rmse:
+            rmse_unroll_average = np.mean(rmse_unroll_list)
+            rmse_unroll_std = np.std(rmse_unroll_list) / np.sqrt(len(rmse_unroll_list))
+            tot_time_unroll /= 1000 # To seconds
 
         rmse_average = np.mean(rmse_list)
         rmse_std = np.std(rmse_list) / np.sqrt(len(rmse_list))
-        mod_sum = ("-" * 20) + f"\nModel: {model_name}\nMean LL: {ll_average} STD LL: {ll_std} Mean RMSE: {rmse_average} STD RMSE: {rmse_std}\n"
+        mod_sum = ("-" * 20) + f"\nModel: {model_name}\nMean LL: {ll_average} STD LL: {ll_std} Mean RMSE: {rmse_average} STD RMSE: {rmse_std}"
+        if rollout_rmse:
+            mod_sum += f" Num Samples: {num_samples} Mean UnrRMSE: {rmse_unroll_average} STD UnrRMSE: {rmse_unroll_std} Total Unroltime: {tot_time_unroll}"
+        mod_sum += "\n"
         print(mod_sum)
         out_txt += mod_sum
     with open(base_out_txt_file + f'_{ordering}.txt', 'w') as file:
@@ -507,7 +548,7 @@ def compare_had_models(base_out_txt_file: str, device: str = "cuda"):
 
 
 if __name__ == "__main__":
-    #compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp")
+    compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp_cnpsnew", rollout_rmse=True)
     #plot_ar_unrolls()
     #measure_perf_timings()
-    measure_perf_timings_hadisd_plot() # for clearer plots
+    #measure_perf_timings_hadisd_plot() # for clearer plots
