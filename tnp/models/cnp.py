@@ -6,6 +6,8 @@ from torch import nn
 from ..networks.deepset import DeepSet
 from .base import ConditionalNeuralProcess
 from .tnp import TNPDecoder
+from .incUpdateBase import IncUpdateEff
+import torch.distributions as td
 
 
 class CNPEncoder(nn.Module):
@@ -46,7 +48,7 @@ class CNPEncoder(nn.Module):
         return zc
 
 
-class CNP(ConditionalNeuralProcess):
+class CNP(ConditionalNeuralProcess, IncUpdateEff):
     def __init__(
         self,
         encoder: CNPEncoder,
@@ -54,3 +56,40 @@ class CNP(ConditionalNeuralProcess):
         likelihood: nn.Module,
     ):
         super().__init__(encoder, decoder, likelihood)
+
+
+    # Effecient incremental updates should only be used for hadIsd where this results in measurable speedup
+    def init_inc_structs(self, m: int, max_nc: int, device: str):
+        if self.encoder.deepset.agg_strat_str != "mean" and self.encoder.deepset.agg_strat_str!= "sum":
+            raise ValueError("Only mean and sum CNP inc supported atm")
+
+        self.inc_cache = {}
+        self.inc_cache["n_points"] = None
+        self.inc_cache["running_sum"] = None
+
+    # Adds new context points
+    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
+        xc_encoded = self.encoder.x_encoder(xc)
+        yc_encoded = self.encoder.y_encoder(yc)
+        z = torch.cat((xc_encoded, yc_encoded), dim=-1)
+        z = self.encoder.deepset.z_encoder(z)
+
+        _, n_new, _ = xc.shape
+        sum_new = torch.nansum(z, dim=-2) # [m, dz]
+        m, dz = sum_new.shape
+        # Inits tensors for first time lazily
+        if self.inc_cache["running_sum"] is None: self.inc_cache["running_sum"] = torch.zeros((m, dz), device=xc.device)
+        if self.inc_cache["n_points"] is None: self.inc_cache["n_points"] = torch.zeros((m, 1), device=xc.device)
+
+        self.inc_cache["n_points"] += n_new
+        self.inc_cache["running_sum"] += sum_new
+
+    def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
+        xt_encoded = self.encoder.x_encoder(xt)
+
+        zc = self.inc_cache["running_sum"]
+        if self.encoder.deepset.agg_strat_str == "mean": zc /= self.inc_cache["n_points"]
+        zc = einops.repeat(zc, "m d -> m n d", n=xt.shape[-2])
+        zc = torch.cat((zc, xt_encoded), dim=-1)
+        return self.likelihood(self.decoder(zc, xt))
+

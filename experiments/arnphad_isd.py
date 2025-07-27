@@ -191,7 +191,7 @@ def measure_perf_timings():
     # Measure hypers
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 1 # Number of runs to aggregate data over
-    token_step = 50 # How many increments of tokens to go up in
+    token_step = 500 # How many increments of tokens to go up in
     min_nt, max_nt = 1, 2003
     dx, dy, m = 4, 1, 1
     nc_start = 1
@@ -370,6 +370,7 @@ def get_model_list():
     #models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
     #models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
     models = [tnp_plain, conv_cnp, batchedTNP, cnp]
+    models = [batchedTNP, cnp, conv_cnp]
     return models
 
 # Compares NP models in AR mode on RBF set

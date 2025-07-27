@@ -4,10 +4,12 @@ from check_shapes import check_shapes
 from torch import nn
 from typing import Optional
 
-from ..networks.setconv import SetConvGridDecoder, SetConvGridEncoder
+from ..networks.setconv import SetConvGridDecoder, SetConvGridEncoder, setconv_to_grid
 from .base import ConditionalNeuralProcess
 from .tnp import TNPDecoder
 from ..networks.fourier_embed import FourierEmbedderHadISD
+from .incUpdateBase import IncUpdateEff
+import torch.distributions as td
 
 
 class ConvCNPEncoder(nn.Module):
@@ -102,7 +104,7 @@ class GriddedConvCNPEncoder(nn.Module):
         return zt
 
 
-class ConvCNP(ConditionalNeuralProcess):
+class ConvCNP(ConditionalNeuralProcess, IncUpdateEff):
     def __init__(
         self,
         encoder: ConvCNPEncoder,
@@ -111,6 +113,49 @@ class ConvCNP(ConditionalNeuralProcess):
     ):
         super().__init__(encoder, decoder, likelihood)
         self.likelihood.min_noise = 1e-5 #  Adds little noise here because sometimes scale is exactly 0 - check to ensure this is small enough to not impact other perf - hacky
+
+    # Effecient incremental updates should only be used for hadIsd where this results in measurable speedup
+    def init_inc_structs(self, m: int, max_nc: int, device: str):
+        if not self.encoder.hadisd_mode:
+                raise RuntimeError("Uses non inc updates for 1d due to low cost.")
+        self.inc_cache = {} # This is an empty cache structure used soley for storing incremental update objects
+        # Creates x grid with correct dimensionaility
+        grid = self.encoder.grid_encoder.grid
+        grid_str = " ".join([f"n{i}" for i in range(grid.ndim - 1)])
+        self.inc_cache["x_grid"] = einops.repeat(grid, f"{grid_str} d -> m {grid_str} d", m=m).to(device)
+        
+        self.inc_cache["z_grid"] = None # Inits on first call to context update
+
+    # Adds new context points
+    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
+        # Builds hadISD feature vector
+        flag = torch.ones_like(yc[..., :1])
+        elev = xc[..., 2:3]
+        time = xc[..., 3:4]
+        # Passes these features into fourier embedder
+        elev_time_vec = torch.cat((elev, time), dim=-1)
+        elev_time_fourier = self.encoder.fourier_encoder(elev_time_vec)
+        
+        z_feats = torch.cat((yc, flag, elev_time_fourier), dim=-1) 
+
+        xc_coords = xc[..., :2] # Coords we incrementally add to set conv grid (lat and lon)
+
+        # Init z grid for first call now that shape is known
+        if self.inc_cache["z_grid"] is None:
+            z_grid_shape = self.inc_cache["x_grid"].shape[:-1] + (z_feats.shape[-1],)
+            self.inc_cache["z_grid"] = torch.zeros(z_grid_shape, device=xc.device)
+        
+        # Adds points to set conv grid
+        self.inc_cache["z_grid"] = setconv_to_grid(xc_coords, z_feats, self.inc_cache["x_grid"], 
+            self.encoder.grid_encoder.lengthscale, z_grid=self.inc_cache["z_grid"], dist_fn=self.encoder.grid_encoder.dist_fn)
+
+    def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
+        # Runs CNN and z encoder as before
+        xt_coords = xt[..., :2]
+        z_grid = self.encoder.z_encoder(self.inc_cache["z_grid"])
+        z_grid = self.encoder.conv_net(z_grid)
+        zt = self.encoder.grid_decoder(self.inc_cache["x_grid"], z_grid, xt_coords)
+        return self.likelihood(self.decoder(zt, xt))
 
 
 class GriddedConvCNP(nn.Module):

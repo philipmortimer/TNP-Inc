@@ -24,6 +24,7 @@ class DeepSet(nn.Module):
     ):
         super().__init__()
 
+        self.agg_strat_str = agg
         self.z_encoder = z_encoder
 
         if agg == "sum":
