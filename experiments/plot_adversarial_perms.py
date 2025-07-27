@@ -580,7 +580,7 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     plot_log_p_lines([(inc_vars_best, "Best Greedy-V"), (inc_vars_median, "Median Greedy-V"), (inc_vars_worst, "Worst Greedy-V")], f"{folder_path}/vargreedy_lines_{file_id}", yt.shape[1])
 
 
-def get_model(config_path, weights_and_bias_ref, device='cuda', seed: bool = True):
+def get_model(config_path, weights_and_bias_ref, device='cuda', seed: bool = True, instantiate_only_model: bool = False, load_mod_weights: bool = True):
     raw_config = deep_convert_dict(
         hiyapyco.load(
             config_path,
@@ -595,20 +595,26 @@ def get_model(config_path, weights_and_bias_ref, device='cuda', seed: bool = Tru
 
     # Instantiate experiment and load checkpoint.
     if seed: pl.seed_everything(config.misc.seed)
-    experiment = instantiate(config)
+    if instantiate_only_model:
+        experiment = instantiate(config.model)
+        model = experiment
+    else:
+        experiment = instantiate(config)
+        model = experiment.model
     experiment.config = config
     if seed: pl.seed_everything(experiment.misc.seed)
 
     # Loads weights and bias model
-    artifact = wandb.Api().artifact(weights_and_bias_ref, type='model')
-    artifact_dir = artifact.download()
-    ckpt_file = os.path.join(artifact_dir, "model.ckpt")
-    lit_model = (
-        LitWrapper.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
-            ckpt_file, model=experiment.model,
+    if load_mod_weights:
+        artifact = wandb.Api().artifact(weights_and_bias_ref, type='model')
+        artifact_dir = artifact.download()
+        ckpt_file = os.path.join(artifact_dir, "model.ckpt")
+        lit_model = (
+            LitWrapper.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
+                ckpt_file, model=model,
+            )
         )
-    )
-    model = lit_model.model
+        model = lit_model.model
     model.to(device)
     return model
 

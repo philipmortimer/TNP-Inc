@@ -1,0 +1,12 @@
+/rds/user/pm846/hpc-work/Thesis/TNP-Inc/tnp/networks/setconv.py:31: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  (torch.tensor(init_lengthscale).exp() - 1).log(),
+/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/torch/functional.py:512: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at ../aten/src/ATen/native/TensorShape.cpp:3587.)
+  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
+Targ ConvCNP (125 x 125): 0it [00:00, ?it/s]/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/torch/nn/modules/conv.py:456: UserWarning: Plan failed with a cudnnException: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor Failed cudnn_status: CUDNN_STATUS_NOT_SUPPORTED (Triggered internally at ../aten/src/ATen/native/cudnn/Conv_v8.cpp:919.)
+  return F.conv2d(input, weight, bias, self.stride,
+Targ ConvCNP (125 x 125): 1it [00:13, 13.05s/it]Targ ConvCNP (125 x 125): 2it [00:24, 12.25s/it]Targ ConvCNP (125 x 125): 3it [00:36, 12.06s/it]Targ ConvCNP (125 x 125): 3it [00:36, 12.19s/it]
+Targ incTNP-Batched: 0it [00:00, ?it/s]Targ incTNP-Batched: 1it [00:05,  5.55s/it]Targ incTNP-Batched: 2it [00:11,  5.93s/it]Targ incTNP-Batched: 3it [00:21,  7.57s/it]Targ incTNP-Batched: 3it [00:21,  7.09s/it]
+Targ CNP: 0it [00:00, ?it/s]Targ CNP: 1it [00:00,  1.03it/s]Targ CNP: 2it [00:01,  1.02it/s]Targ CNP: 3it [00:02,  1.02it/s]Targ CNP: 3it [00:02,  1.02it/s]
+/rds/user/pm846/hpc-work/Thesis/TNP-Inc/tnp/networks/setconv.py:31: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  (torch.tensor(init_lengthscale).exp() - 1).log(),
+Targ ConvCNP (50 x 50): 0it [00:00, ?it/s]Targ ConvCNP (50 x 50): 1it [00:02,  2.39s/it]Targ ConvCNP (50 x 50): 2it [00:04,  2.40s/it]Targ ConvCNP (50 x 50): 3it [00:07,  2.42s/it]Targ ConvCNP (50 x 50): 3it [00:07,  2.41s/it]

@@ -7,6 +7,7 @@ from check_shapes import check_shapes
 from torch import nn
 from .kv_cache import update_kv_cache
 from .kv_cache_fixed import update_kv_cache_fixed, get_mask_fixed
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
 class BaseMultiHeadAttention(nn.Module, ABC):
@@ -57,7 +58,9 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         kv_tag: Optional[str] = None, # Layer ID to look up in kv_cache,
         use_causal: bool = False, # Whether to set causal flag in SDPA,
         use_fixed_kv: bool = False, # Whether to use more optimised fixed kv cache or not - less safe but potentially faster
+        use_flash: bool = False,
     ) -> torch.Tensor:
+        #use_flash = True # Enable this to allow flash in hacky way without wiring everything up but be sure to comment out once experiments done
         q = self.to_q(xq)
         k_new = self.to_k(xk)
         v_new = self.to_v(xv)
@@ -69,23 +72,30 @@ class BaseMultiHeadAttention(nn.Module, ABC):
 
         if kv_tag is None: # KV caching not used if no tag provided
             k, v = k_new, v_new
+            if use_flash: mask, use_causal = None, False # This ONLY works for the case of one token added at time (which is true for AR NPs)
         else:
             if use_fixed_kv:
                 k, v = update_kv_cache_fixed(k_new, v_new, kv_cache, kv_tag)
-                if kv_cache is not None and kv_tag is not None:
-                    m, _, k_len, _ = k.shape
-                    _, _, q_len, _ = q.shape
-                    mask = get_mask_fixed(kv_cache, q_len, k_len)
-                    use_causal = False
+                if use_flash:
+                    mask, use_causal = None, False
+                else:
+                    if kv_cache is not None and kv_tag is not None:
+                        m, _, k_len, _ = k.shape
+                        _, _, q_len, _ = q.shape
+                        mask = get_mask_fixed(kv_cache, q_len, k_len)
+                        use_causal = False
             else:
                 k, v = update_kv_cache(k_new, v_new, kv_cache, kv_tag)
-                # Loads cached mask in case of KV caching - https://github.com/pytorch/pytorch/issues/144858
-                if kv_cache is not None and  kv_tag is not None:
-                    m, _, k_len, _ = k.shape
-                    _, _, q_len, _ = q.shape
-                    mask = torch.tril(torch.ones(k_len, k_len, dtype=torch.bool, device=k.device))[-q_len:]
-                    #mask = mask.unsqueeze(0).expand(m, -1, -1).contiguous()
-                    use_causal = False
+                if use_flash:
+                    mask, use_causal = None, False
+                else:
+                    # Loads cached mask in case of KV caching - https://github.com/pytorch/pytorch/issues/144858
+                    if kv_cache is not None and  kv_tag is not None:
+                        m, _, k_len, _ = k.shape
+                        _, _, q_len, _ = q.shape
+                        mask = torch.tril(torch.ones(k_len, k_len, dtype=torch.bool, device=k.device))[-q_len:]
+                        #mask = mask.unsqueeze(0).expand(m, -1, -1).contiguous()
+                        use_causal = False
             
 
         #if mask is not None:
@@ -97,9 +107,15 @@ class BaseMultiHeadAttention(nn.Module, ABC):
         if self.linear:
             out = linear_attention(q, k, v, attn_mask=mask, scale=self.scale)
         else:
-            out = nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
-                q, k, v, attn_mask=mask, scale=self.scale, is_causal=use_causal
-            )
+            if use_flash:
+                with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+                    out = nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
+                        q, k, v, attn_mask=mask, scale=self.scale, is_causal=use_causal
+                    )
+            else:
+                out = nn.functional.scaled_dot_product_attention(  # pylint: disable=not-callable
+                    q, k, v, attn_mask=mask, scale=self.scale, is_causal=use_causal
+                )
 
         out = einops.rearrange(out, "m h n d -> m n (h d)")
         out = self.to_out(out)
@@ -142,8 +158,9 @@ class MultiHeadSelfAttention(BaseMultiHeadAttention):
         kv_tag: Optional[str] = None,
         use_causal: bool = False, # Whether to set causal flag in SDPA
         use_fixed_kv: bool = False, # Whether to use more optimised fixed kv cache or not - less safe but potentially faster
+        use_flash: bool = False,
     ) -> torch.Tensor:
-        return super().propagate(x, x, x, mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal, use_fixed_kv=use_fixed_kv)
+        return super().propagate(x, x, x, mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal, use_fixed_kv=use_fixed_kv,use_flash=use_flash)
 
 
 class MultiHeadCrossAttention(BaseMultiHeadAttention):
@@ -162,9 +179,9 @@ class MultiHeadCrossAttention(BaseMultiHeadAttention):
         "return: [m, nq, dx]",
     )
     def forward(
-        self, xq: torch.Tensor, xkv: torch.Tensor, mask: Optional[torch.Tensor] = None
+        self, xq: torch.Tensor, xkv: torch.Tensor, mask: Optional[torch.Tensor] = None, use_flash: bool = False,
     ):
-        return super().propagate(xq, xkv, xkv, mask)
+        return super().propagate(xq, xkv, xkv, mask, use_flash=use_flash)
 
 
 class MultiHeadKRAttention(BaseMultiHeadAttention):

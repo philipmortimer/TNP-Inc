@@ -110,8 +110,9 @@ class MultiHeadSelfAttentionLayer(BaseMultiHeadAttentionLayer):
         kv_tag: Optional[str] = None,
         use_causal: bool = False, # Whether to set causal flag in SDPA
         use_fixed_kv: bool = False, # Whether to use more optimised fixed kv cache or not - less safe but potentially faster
+        use_flash: bool = False,
     ) -> torch.Tensor:
-        x = self.attn(x, mask=mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal, use_fixed_kv=use_fixed_kv)
+        x = self.attn(x, mask=mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal, use_fixed_kv=use_fixed_kv, use_flash=use_flash)
         return self.attn_dropout(x)
 
     @check_shapes("x: [m, n, d]", "mask: [n, n]", "return: [m, n, d]")
@@ -119,12 +120,13 @@ class MultiHeadSelfAttentionLayer(BaseMultiHeadAttentionLayer):
         self, x: torch.Tensor, mask: Optional[torch.Tensor] = None, kv_cache: Optional[dict] = None, kv_tag: Optional[str] = None,
         use_causal: bool = False, # Whether to set causal flag in SDPA
         use_fixed_kv: bool = False, # Whether to use more optimised fixed kv cache or not - less safe but potentially faster
+        use_flash: bool = False,
     ) -> torch.Tensor:
         if self.norm_first:
-            x = x + self.attn_block(self.norm1(x), mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal, use_fixed_kv=use_fixed_kv)
+            x = x + self.attn_block(self.norm1(x), mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal, use_fixed_kv=use_fixed_kv, use_flash=use_flash)
             x = x + self.ff_block(self.norm2(x))
         else:
-            x = self.norm1(x + self.attn_block(x, mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal, use_fixed_kv=use_fixed_kv))
+            x = self.norm1(x + self.attn_block(x, mask, kv_cache=kv_cache, kv_tag=kv_tag, use_causal=use_causal, use_fixed_kv=use_fixed_kv, use_flash=use_flash))
             x = self.norm2(x + self.ff_block(x))
 
         return x
@@ -143,21 +145,22 @@ class MultiHeadCrossAttentionLayer(BaseMultiHeadAttentionLayer):
         xq: torch.Tensor,
         xkv: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
+        use_flash: bool = False,
     ) -> torch.Tensor:
-        x = self.attn(xq, xkv, mask=mask)
+        x = self.attn(xq, xkv, mask=mask, use_flash=use_flash)
         return self.attn_dropout(x)
 
     @check_shapes(
         "xq: [m, nq, d]", "xkv: [m, nkv, d]", "mask: [nq, nkv]", "return: [m, n, d]"
     )
     def forward(
-        self, xq: torch.Tensor, xkv: torch.Tensor, mask: Optional[torch.Tensor] = None,
+        self, xq: torch.Tensor, xkv: torch.Tensor, mask: Optional[torch.Tensor] = None,use_flash: bool = False,
     ) -> torch.Tensor:
         if self.norm_first:
-            xq = xq + self.attn_block(self.norm1(xq), self.norm1(xkv), mask)
+            xq = xq + self.attn_block(self.norm1(xq), self.norm1(xkv), mask,use_flash=use_flash)
             xq = xq + self.ff_block(self.norm2(xq))
         else:
-            xq = self.norm1(xq + self.attn_block(xq, xkv, mask))
+            xq = self.norm1(xq + self.attn_block(xq, xkv, mask,use_flash=use_flash))
             xq = self.norm2(xq + self.ff_block(xq))
 
         return xq

@@ -164,7 +164,7 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior, IncUpdateEff, IncUpdateEffFixed)
 
 
     # Logic for effecient incremental context updates
-    def init_inc_structs_fixed(self, m: int, max_nc: int, xt:torch.Tensor, dy: int, device: str):
+    def init_inc_structs_fixed(self, m: int, max_nc: int, xt:torch.Tensor, dy: int, device: str, use_flash: bool=False):
         # Adds empty token
         start_token = self.encoder.empty_token.expand(m, -1, -1)
         dz = start_token.shape[2]
@@ -173,19 +173,29 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior, IncUpdateEff, IncUpdateEffFixed)
         head_dim = int(round(self.encoder.transformer_encoder.mhsa_layers[0].attn.scale ** -2))
         self.kv_cache_inc = init_kv_cache_fixed(layers=layers, batch_size=m, max_nc=max_nc+1, dz=dz, 
             heads=heads, k_dim=head_dim, v_dim=head_dim, device=device)
-        self.encoder.transformer_encoder.encode_context_fixedkv(start_token, self.kv_cache_inc)
+        self.encoder.transformer_encoder.encode_context_fixedkv(start_token, self.kv_cache_inc, use_flash=use_flash)
         # Caches target points
         self.target_encoding_cache_zt = self.encoder._preprocess_targets(xt, dy) # [m, nt, dz]
 
     # Adds new context points
-    def update_ctx_fixed(self, xc: torch.Tensor, yc: torch.Tensor):
+    def update_ctx_fixed(self, xc: torch.Tensor, yc: torch.Tensor, use_flash: bool=False):
         zc = self.encoder._preprocess_context(xc, yc)
-        self.encoder.transformer_encoder.encode_context_fixedkv(zc, self.kv_cache_inc)
+        self.encoder.transformer_encoder.encode_context_fixedkv(zc, self.kv_cache_inc, use_flash=use_flash)
 
-    def query_fixed(self, tgt_start_ind: int, tgt_end_ind: int) -> td.Normal:
+    def query_fixed(self, tgt_start_ind: int, tgt_end_ind: int, use_flash: bool=False) -> td.Normal:
         # xt shape must [m, nt, dx] -> only uses nt value tho so can be junk or truncated before hand
         zt = self.target_encoding_cache_zt[:, tgt_start_ind:tgt_end_ind, :]
-        return self.likelihood(self.decoder(self.encoder.transformer_encoder.query_fixedkv(zt, self.kv_cache_inc), zt))
+        dec = self.decoder(self.encoder.transformer_encoder.query_fixedkv(zt, self.kv_cache_inc, use_flash=use_flash), zt)
+        if use_flash: # torch 16 combined with random gen (not from actual dataset can lead to some nans. instead of fixing with proper data loader this hacky sol is quick)
+            prior_noise = self.likelihood.min_noise
+            dec = torch.nan_to_num(dec)
+            #self.likelihood.min_noise += 1e-2
+        #print(dec)
+        dist = self.likelihood(dec)
+
+        if use_flash:
+            self.likelihood.min_noise = prior_noise
+        return dist
 
     # Logic for effecient incremental context updates
     def init_inc_structs(self, m: int, max_nc: int, device: str):

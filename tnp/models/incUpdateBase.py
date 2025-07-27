@@ -23,14 +23,14 @@ class IncUpdateEff(ABC):
 # for certain cases. Big O still the same and generic version tested. This is used for stuff like AR mode to make gains on small ctx
 class IncUpdateEffFixed(ABC):
     @abstractmethod
-    def init_inc_structs_fixed(self, m: int, max_nc: int, xt:torch.Tensor, device: str):
+    def init_inc_structs_fixed(self, m: int, max_nc: int, xt:torch.Tensor, device: str, use_flash: bool):
         raise NotImplementedError
     
     @abstractmethod
-    def update_ctx_fixed(self, xc: torch.Tensor, yc: torch.Tensor):
+    def update_ctx_fixed(self, xc: torch.Tensor, yc: torch.Tensor, use_flash: bool):
         raise NotImplementedError
 
     @abstractmethod
-    def query_fixed(self, tgt_start_ind: int, tgt_end_ind: int) -> td.Normal:
+    def query_fixed(self, tgt_start_ind: int, tgt_end_ind: int, use_flash: bool) -> td.Normal:
         raise NotImplementedError
 
