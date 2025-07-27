@@ -372,6 +372,7 @@ def plot_ar_unrolls():
     folder_name = "experiments/plot_results/hadar/plots/"
     no_kernels = 5#20
     device="cuda"
+    use_flash = False
     # End of hypers
     models = get_model_list()
     data, lat_mesh, lon_mesh, elev_np = get_had_testset_and_plot_stuff()
@@ -389,7 +390,13 @@ def plot_ar_unrolls():
             os.makedirs(model_folder)
         for sample in no_samples:
             def pred_fn_pred(model, batch, predict_without_yt_tnpa=True):
-                return ar_predict(model, batch.xc, batch.yc, batch.xt, order, sample, device=device)
+                if use_flash:
+                    with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.float16), torch.backends.cuda.sdp_kernel(enable_flash=True, enable_math=False, enable_mem_efficient=False):
+                        pred_dist = ar_predict(model, batch.xc, batch.yc, batch.xt, order, sample, device=device, use_flash=use_flash)
+                else:
+                    with torch.no_grad():
+                        pred_dist = ar_predict(model, batch.xc, batch.yc, batch.xt, order, sample, device=device, use_flash=use_flash)
+                return pred_dist
             plot_hadISD(
                 model=model,
                 batches=batches_plot,
@@ -421,7 +428,7 @@ def get_had_testset_and_plot_stuff():
     min_nc = 1
     max_nc = 2033
     nt = 250
-    samples_per_epoch= 80_000
+    samples_per_epoch= 4_000 # 80_000
     batch_size = 32
     deterministic = True
     ordering_strategy = "random"
@@ -480,7 +487,7 @@ def get_model_list():
     #models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
     all_models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp, conv_cnp_100, conv_cnp_125, conv_cnp_150]
     models = [tnp_plain, conv_cnp, batchedTNP, cnp]
-    models = [priorBatched, cnp, conv_cnp]
+    models = [batchedTNP]
     return models
 
 # Compares NP models in AR mode on RBF set
@@ -548,7 +555,7 @@ def compare_had_models(base_out_txt_file: str, rollout_rmse: bool, device: str =
 
 
 if __name__ == "__main__":
-    compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp_cnpsnew", rollout_rmse=True)
-    #plot_ar_unrolls()
+    #compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp_cnpsnew", rollout_rmse=True)
+    plot_ar_unrolls()
     #measure_perf_timings()
     #measure_perf_timings_hadisd_plot() # for clearer plots
