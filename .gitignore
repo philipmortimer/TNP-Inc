@@ -1,5 +1,5 @@
 # Manually added files
-data/
+#data/
 checkpoints/
 *.DS_Store
 fig/
