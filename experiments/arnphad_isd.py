@@ -136,15 +136,15 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     is_inc_gen_update = (is_inc_gen_update and  not prioritise_fixed) or (is_inc_gen_update and not is_fixed_inc_update)
     assert is_fixed_inc_update != is_inc_gen_update or (not is_fixed_inc_update and not is_inc_gen_update), "Xor onf fixed vs inc update"
     if is_inc_gen_update:
-        model.init_inc_structs(m=xc_stacked.shape[0], max_nc=nc+nt, device=device)
-        model.update_ctx(xc=xc_stacked, yc=yc_stacked)
+        model.init_inc_structs(m=xc_stacked.shape[0], max_nc=nc+nt, device=device,use_flash=use_flash)
+        model.update_ctx(xc=xc_stacked, yc=yc_stacked,use_flash=use_flash)
     elif is_fixed_inc_update:
         model.init_inc_structs_fixed(m=xc_stacked.shape[0], max_nc=nc+nt, xt=xt_stacked, dy=dy, device=device, use_flash=use_flash)
 
     for i in range(nt):
         xt_tmp = xt_stacked[:, i:i+1,:]
         if is_inc_gen_update:
-            pred_dist = model.query(xt=xt_tmp, dy=dy)
+            pred_dist = model.query(xt=xt_tmp, dy=dy,use_flash=use_flash)
         elif is_fixed_inc_update:
             pred_dist = model.query_fixed(tgt_start_ind=i, tgt_end_ind=i+1, use_flash=use_flash)
         else:
@@ -158,7 +158,7 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
         if i < nt - 1:
             yt_sampled = pred_dist.sample() # [m * num_samples, 1, dy]
             if is_inc_gen_update:
-                model.update_ctx(xc=xt_tmp, yc=yt_sampled)
+                model.update_ctx(xc=xt_tmp, yc=yt_sampled,use_flash=use_flash)
             elif is_fixed_inc_update:
                 model.update_ctx_fixed(xc=xt_tmp, yc=yt_sampled, use_flash=use_flash)
             else:
@@ -267,7 +267,7 @@ def measure_perf_timings_hadisd_plot():
     # Measure hypers
     burn_in = 1 # Number of burn in runs to ignore
     aggregate_over = 1 # Number of runs to aggregate data over
-    token_step = 1000 # How many increments of tokens to go up in
+    token_step = 50 # How many increments of tokens to go up in
     min_nc, max_nc = 1, 2003
     nt = 250
     dx, dy, m = 4, 1, 1
@@ -279,8 +279,8 @@ def measure_perf_timings_hadisd_plot():
     plot_name_folder = "experiments/plot_results/hadar/perf_plt/"
     tnp_plain = ('experiments/configs/hadISD/had_tnp_plain.yml',
         'pm846-university-of-cambridge/plain-tnp-had/model-o20d6s1q:v99', 'TNP-D')
-    priorBatched = ('experiments/configs/hadISD/had_incTNP_priorbatched.yml',
-        'pm846-university-of-cambridge/mask-priorbatched-tnp-had/model-83h4gpp2:v99', 'incTNP-Batched')
+    batchedTNP = ('experiments/configs/hadISD/had_incTNP_batched.yml',
+        'pm846-university-of-cambridge/mask-batched-tnp-had/model-z5nlguxq:v99', 'incTNP-Batched')
     cnp = ('experiments/configs/hadISD/had_cnp.yml',
         'pm846-university-of-cambridge/cnp-had/model-suqmhf9v:v99', 'CNP')
     conv_cnp = ('experiments/configs/hadISD/had_convcnp.yml',
@@ -288,8 +288,10 @@ def measure_perf_timings_hadisd_plot():
     conv_cnp_big = ('experiments/configs/hadISD/alt_variants/had_big_convcnp.yml',
         '', 'ConvCNP (100 x 100)')
     conv_cnp_125 = ('experiments/configs/hadISD_csd3/alt_variants/had_125_convcnp.yml',
-        '', 'ConvCNP (125 x 125)')    
-    models = [conv_cnp_125, priorBatched, cnp, conv_cnp, ]
+        '', 'ConvCNP (125 x 125)') 
+    conv_cnp_150 = ('experiments/configs/hadISD_csd3/alt_variants/had_between_convcnp.yml',
+        '', 'ConvCNP (150 x 150)')      
+    models = [tnp_plain, batchedTNP, cnp, conv_cnp_big, conv_cnp_125, conv_cnp_150]
     # End of measure hypers
     max_high = 2
     xt = (torch.rand((m, nt, dx), device=device) * max_high * 2) - max_high
@@ -300,8 +302,8 @@ def measure_perf_timings_hadisd_plot():
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
     for model_idx, (model_yml, model_wab, model_name) in enumerate(models):
         use_flash = False
-        if model_name == "incTNP-Batched":   # MAKE SURE TO ALTER ATTENTION CODE WHEN RUNNING THIS PART. With proper flash attentiin inc wins     
-            use_flash=False
+        if model_name == "incTNP-Batched":
+            use_flash=True
         model = get_model(model_yml, model_wab, seed=False, device=device, instantiate_only_model=True, load_mod_weights=False)
         model.eval() 
         for t_index, nc in tqdm(enumerate(context_sizes), desc=f'Targ {model_name}'):
@@ -341,7 +343,7 @@ def measure_perf_timings_hadisd_plot():
     ax.set_xlabel('Number of Context Stations')
     ax.set_ylabel('Runtime (s)')
     ax.legend()
-    ax.set_title(f'Runtime of AR NPs (S={num_samples} NT={nt})')
+    ax.set_title(f'Runtime of AR NPs on HadISD (S={num_samples} NT={nt})')
     ax.grid(True, linestyle='--', alpha=0.4)
     fig.tight_layout()
     plt.savefig(runtime_file_name, dpi=300)
@@ -353,7 +355,7 @@ def measure_perf_timings_hadisd_plot():
     ax.set_xlabel('Number of Context Stations')
     ax.set_ylabel('Memory Usage (MB)')
     ax.legend()
-    ax.set_title(f'Memory Usage of AR NPs (S={num_samples} NT={nt})')
+    ax.set_title(f'Memory Usage of AR NPs on HadISD (S={num_samples} NT={nt})')
     ax.grid(True, linestyle='--', alpha=0.4)
     fig.tight_layout()
     plt.savefig(memory_file_name, dpi=300)
@@ -463,7 +465,9 @@ def get_model_list():
     cnp = ('experiments/configs/hadISD/had_cnp.yml',
         'pm846-university-of-cambridge/cnp-had/model-suqmhf9v:v99', 'CNP')
     conv_cnp = ('experiments/configs/hadISD/had_convcnp.yml',
-        'pm846-university-of-cambridge/convcnp-had/model-p4f775ey:v98', 'ConvCNP')    
+        'pm846-university-of-cambridge/convcnp-had/model-p4f775ey:v98', 'ConvCNP (50 x 50)')
+    conv_cnp_100 = ('experiments/configs/hadISD/alt_variants/had_big_convcnp.yml',
+        'pm846-university-of-cambridge/convcnp-had/model-ecytkrfq:v99', 'ConvCNP (100 x 100)')
     #models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
     #models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
     models = [tnp_plain, conv_cnp, batchedTNP, cnp]

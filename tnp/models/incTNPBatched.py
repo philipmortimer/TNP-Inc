@@ -134,16 +134,16 @@ class IncTNPBatched(BatchedCausalTNP, IncUpdateEff):
         super().__init__(encoder, decoder, likelihood)
 
     # Logic for effecient incremental context updates
-    def init_inc_structs(self, m: int, max_nc: int, device: str):
+    def init_inc_structs(self, m: int, max_nc: int, device: str, use_flash: bool=False):
         self.kv_cache_inc = init_kv_cache()
 
 
     # Adds new context points
-    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
+    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor, use_flash: bool=False):
         zc = self.encoder._preprocess_context(xc, yc)
-        self.encoder.transformer_encoder.encode_context(zc, self.kv_cache_inc)
+        self.encoder.transformer_encoder.encode_context(zc, self.kv_cache_inc, use_flash=use_flash)
 
-    def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
+    def query(self, xt: torch.Tensor, dy: int, use_flash: bool=False) -> td.Normal:
         zt = self.encoder._preprocess_targets(xt, dy)
-        return self.likelihood(self.decoder(self.encoder.transformer_encoder.query(zt, self.kv_cache_inc), xt))
+        return self.likelihood(self.decoder(self.encoder.transformer_encoder.query(zt, self.kv_cache_inc, use_flash=use_flash), xt))
 

@@ -115,7 +115,7 @@ class ConvCNP(ConditionalNeuralProcess, IncUpdateEff):
         self.likelihood.min_noise = 1e-5 #  Adds little noise here because sometimes scale is exactly 0 - check to ensure this is small enough to not impact other perf - hacky
 
     # Effecient incremental updates should only be used for hadIsd where this results in measurable speedup
-    def init_inc_structs(self, m: int, max_nc: int, device: str):
+    def init_inc_structs(self, m: int, max_nc: int, device: str, use_flash: bool=False):
         if not self.encoder.hadisd_mode:
                 raise RuntimeError("Uses non inc updates for 1d due to low cost.")
         self.inc_cache = {} # This is an empty cache structure used soley for storing incremental update objects
@@ -127,7 +127,7 @@ class ConvCNP(ConditionalNeuralProcess, IncUpdateEff):
         self.inc_cache["z_grid"] = None # Inits on first call to context update
 
     # Adds new context points
-    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
+    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor, use_flash: bool=False):
         # Builds hadISD feature vector
         flag = torch.ones_like(yc[..., :1])
         elev = xc[..., 2:3]
@@ -149,7 +149,7 @@ class ConvCNP(ConditionalNeuralProcess, IncUpdateEff):
         self.inc_cache["z_grid"] = setconv_to_grid(xc_coords, z_feats, self.inc_cache["x_grid"], 
             self.encoder.grid_encoder.lengthscale, z_grid=self.inc_cache["z_grid"], dist_fn=self.encoder.grid_encoder.dist_fn)
 
-    def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
+    def query(self, xt: torch.Tensor, dy: int, use_flash: bool=False) -> td.Normal:
         # Runs CNN and z encoder as before
         xt_coords = xt[..., :2]
         z_grid = self.encoder.z_encoder(self.inc_cache["z_grid"])

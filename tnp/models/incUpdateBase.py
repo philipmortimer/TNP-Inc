@@ -6,15 +6,15 @@ import torch.distributions as td
 # General inc updates
 class IncUpdateEff(ABC):
     @abstractmethod
-    def init_inc_structs(self, m: int, max_nc: int, device: str):
+    def init_inc_structs(self, m: int, max_nc: int, device: str, use_flash: bool):
         raise NotImplementedError
     
     @abstractmethod
-    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
+    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor, use_flash: bool):
         raise NotImplementedError
 
     @abstractmethod
-    def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
+    def query(self, xt: torch.Tensor, dy: int, use_flash: bool) -> td.Normal:
         raise NotImplementedError
 
 

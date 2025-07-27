@@ -132,13 +132,13 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
     @check_shapes(
         "zc_new: [m, nc_new, dz]"
     )
-    def encode_context(self, zc_new: torch.Tensor, kv_cache: dict):
+    def encode_context(self, zc_new: torch.Tensor, kv_cache: dict, use_flash: bool = False):
         L = len(self.mhsa_layers)
         m, nc_new, dz = zc_new.shape
         ctx_vals = torch.empty((L, m, nc_new, dz), device=zc_new.device)
         for i, mhsa_layer in enumerate(self.mhsa_layers):
             self_attention_layer_tag = f"layer_{i}_sa" # Layer tag for KV
-            zc_new = mhsa_layer(zc_new, kv_cache=kv_cache, kv_tag=self_attention_layer_tag)
+            zc_new = mhsa_layer(zc_new, kv_cache=kv_cache, kv_tag=self_attention_layer_tag,use_flash=use_flash)
             # Writes updated context
             ctx_tag = f"context_layer_{i}"
             update_ctx_cache(zc_new, kv_cache, ctx_tag)
@@ -147,10 +147,10 @@ class TNPTransformerFullyMaskedEncoder(nn.Module):
     @check_shapes(
         "zt: [m, nt, dz]", "return: [m, nt, dz]"
     )
-    def query(self, zt, kv_cache: dict) -> torch.Tensor:
+    def query(self, zt, kv_cache: dict, use_flash: bool = False) -> torch.Tensor:
         for i, mhca_layer in enumerate(self.mhca_layers):
             ctx_tag = f"context_layer_{i}"
-            zt = mhca_layer(zt, kv_cache[ctx_tag])
+            zt = mhca_layer(zt, kv_cache[ctx_tag],use_flash=use_flash)
         return zt
 
 

@@ -102,15 +102,15 @@ class IncTNPBatchedEncoderPrior(nn.Module):
     @check_shapes(
         "zc_new: [m, nc_new, dz]", "mask_sa_big: [m, nc_max, nc_max]"
     )
-    def update_context(self, zc_new: torch.Tensor, kv_cache: dict, mask_sa_big: Optional[torch.Tensor] = None) -> torch.Tensor:
-        zc_updated = self.transformer_encoder.encode_context(zc_new, kv_cache=kv_cache)
+    def update_context(self, zc_new: torch.Tensor, kv_cache: dict, mask_sa_big: Optional[torch.Tensor] = None, use_flash: bool=False) -> torch.Tensor:
+        zc_updated = self.transformer_encoder.encode_context(zc_new, kv_cache=kv_cache, use_flash=use_flash)
 
     # Once the context has been conditioned on, this is used to run predictions. Essentially just the CA branch.
     @check_shapes(
         "zt: [m, nt, dz]", "return: [m, nt, dz]"
     )
-    def query(self, zt: torch.Tensor, kv_cache: dict) -> torch.Tensor:
-        return self.transformer_encoder.query(zt, kv_cache)
+    def query(self, zt: torch.Tensor, kv_cache: dict, use_flash: bool=False) -> torch.Tensor:
+        return self.transformer_encoder.query(zt, kv_cache, use_flash=use_flash)
 
     @check_shapes(
         "x: [m, n, dx]", "y: [m, n, dy]","return: [m, n, dz]"
@@ -198,21 +198,21 @@ class IncTNPBatchedPrior(BatchedCausalTNPPrior, IncUpdateEff, IncUpdateEffFixed)
         return dist
 
     # Logic for effecient incremental context updates
-    def init_inc_structs(self, m: int, max_nc: int, device: str):
+    def init_inc_structs(self, m: int, max_nc: int, device: str, use_flash: bool=False):
         self.kv_cache_inc = init_kv_cache()
         # Adds empty token
         start_token = self.encoder.empty_token.expand(m, -1, -1)
-        self.encoder.update_context(start_token, self.kv_cache_inc)
+        self.encoder.update_context(start_token, self.kv_cache_inc,use_flash=use_flash)
 
 
     # Adds new context points
-    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
+    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor, use_flash: bool=False):
         zc = self.encoder._preprocess_context(xc, yc)
-        self.encoder.update_context(zc, self.kv_cache_inc)
+        self.encoder.update_context(zc, self.kv_cache_inc,use_flash=use_flash)
 
-    def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
+    def query(self, xt: torch.Tensor, dy: int, use_flash: bool=False) -> td.Normal:
         zt = self.encoder._preprocess_targets(xt, dy)
-        return self.likelihood(self.decoder(self.encoder.query(zt, self.kv_cache_inc), xt))
+        return self.likelihood(self.decoder(self.encoder.query(zt, self.kv_cache_inc, use_flash=use_flash), xt))
 
     # Greedy Context ordering algorithm using KV caching. Note it is incremental (so given an initial context set + a number of new ctx points it can pick the best order)
     # This approach assumes we already have all context points.

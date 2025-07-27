@@ -59,7 +59,7 @@ class CNP(ConditionalNeuralProcess, IncUpdateEff):
 
 
     # Effecient incremental updates should only be used for hadIsd where this results in measurable speedup
-    def init_inc_structs(self, m: int, max_nc: int, device: str):
+    def init_inc_structs(self, m: int, max_nc: int, device: str, use_flash: bool=False):
         if self.encoder.deepset.agg_strat_str != "mean" and self.encoder.deepset.agg_strat_str!= "sum":
             raise ValueError("Only mean and sum CNP inc supported atm")
 
@@ -68,7 +68,7 @@ class CNP(ConditionalNeuralProcess, IncUpdateEff):
         self.inc_cache["running_sum"] = None
 
     # Adds new context points
-    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor):
+    def update_ctx(self, xc: torch.Tensor, yc: torch.Tensor, use_flash: bool=False):
         xc_encoded = self.encoder.x_encoder(xc)
         yc_encoded = self.encoder.y_encoder(yc)
         z = torch.cat((xc_encoded, yc_encoded), dim=-1)
@@ -84,7 +84,7 @@ class CNP(ConditionalNeuralProcess, IncUpdateEff):
         self.inc_cache["n_points"] += n_new
         self.inc_cache["running_sum"] += sum_new
 
-    def query(self, xt: torch.Tensor, dy: int) -> td.Normal:
+    def query(self, xt: torch.Tensor, dy: int, use_flash: bool=False) -> td.Normal:
         xt_encoded = self.encoder.x_encoder(xt)
 
         zc = self.inc_cache["running_sum"]
