@@ -22,7 +22,7 @@
 #! Note that the job submission script will enforce no more than 32 cpus per GPU.
 #SBATCH --gres=gpu:1
 #! How much wallclock time will be required?
-#SBATCH --time=23:00:00
+#SBATCH --time=08:00:00
 #! What types of email messages do you wish to receive?
 #SBATCH --mail-type=NONE
 #! Uncomment this to prevent the job from being requeued (e.g. if
@@ -38,7 +38,7 @@
 #! ######################################################################################
 #! Variables required
 #! Training code info
-yml_file="experiments/configs/hadISD_csd3/alt_variants/had_125_convcnp.yml"
+yml_file="experiments/configs/hadISD_csd3/alt_variants/lrs/lr1e4.yml"
 train_script="experiments/train.py"
 base_dir="$HOME/rds/hpc-work/Thesis/TNP-Inc/"
 #! 

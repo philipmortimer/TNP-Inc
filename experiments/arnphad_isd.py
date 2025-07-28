@@ -485,7 +485,7 @@ def get_model_list():
         'pm846-university-of-cambridge/convcnp-had/s8gzetnn:v99', 'ConvCNP (150 x 150)')
     #models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
     #models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
-    all_models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp, conv_cnp_100, conv_cnp_125, conv_cnp_150]
+    all_models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp, conv_cnp_100]
     return all_models
 
 # Compares NP models in AR mode on RBF set

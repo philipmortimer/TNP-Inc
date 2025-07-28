@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J lr_1e4
+#SBATCH -J eval_ars
 #! Which project should be charged (NB Wilkes2 projects end in '-GPU'):
 #SBATCH -A MLMI-PM846-SL2-GPU
 #! How many whole nodes should be allocated?
@@ -22,7 +22,7 @@
 #! Note that the job submission script will enforce no more than 32 cpus per GPU.
 #SBATCH --gres=gpu:1
 #! How much wallclock time will be required?
-#SBATCH --time=23:00:00
+#SBATCH --time=36:00:00
 #! What types of email messages do you wish to receive?
 #SBATCH --mail-type=NONE
 #! Uncomment this to prevent the job from being requeued (e.g. if
@@ -38,9 +38,9 @@
 #! ######################################################################################
 #! Variables required
 #! Training code info
-yml_file="experiments/configs/hadISD_csd3/alt_variants/had_125_convcnp.yml"
-train_script="experiments/train.py"
+train_script="experiments/arnphad_isd.py"
 base_dir="$HOME/rds/hpc-work/Thesis/TNP-Inc/"
+out_file="out.txt"
 #! 
 #! ######################################################################################
 
@@ -60,7 +60,7 @@ export OMP_NUM_THREADS=1
 #! Number of MPI tasks to be started by the application per node and in total (do not change):
 np=$[${numnodes}*${mpi_tasks_per_node}]
 
-application="python ${train_script} --config ${yml_file}"
+application="python -u ${train_script} > ${out_file} 2>&1"
 
 #! Script execution
 cd "$base_dir"
