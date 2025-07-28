@@ -1,12 +1,9 @@
-/rds/user/pm846/hpc-work/Thesis/TNP-Inc/tnp/networks/setconv.py:31: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
-  (torch.tensor(init_lengthscale).exp() - 1).log(),
-/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/torch/functional.py:512: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at ../aten/src/ATen/native/TensorShape.cpp:3587.)
-  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
-Targ ConvCNP (125 x 125): 0it [00:00, ?it/s]/home/pm846/.conda/envs/tnpp/lib/python3.10/site-packages/torch/nn/modules/conv.py:456: UserWarning: Plan failed with a cudnnException: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor Failed cudnn_status: CUDNN_STATUS_NOT_SUPPORTED (Triggered internally at ../aten/src/ATen/native/cudnn/Conv_v8.cpp:919.)
-  return F.conv2d(input, weight, bias, self.stride,
-Targ ConvCNP (125 x 125): 1it [00:13, 13.05s/it]Targ ConvCNP (125 x 125): 2it [00:24, 12.25s/it]Targ ConvCNP (125 x 125): 3it [00:36, 12.06s/it]Targ ConvCNP (125 x 125): 3it [00:36, 12.19s/it]
-Targ incTNP-Batched: 0it [00:00, ?it/s]Targ incTNP-Batched: 1it [00:05,  5.55s/it]Targ incTNP-Batched: 2it [00:11,  5.93s/it]Targ incTNP-Batched: 3it [00:21,  7.57s/it]Targ incTNP-Batched: 3it [00:21,  7.09s/it]
-Targ CNP: 0it [00:00, ?it/s]Targ CNP: 1it [00:00,  1.03it/s]Targ CNP: 2it [00:01,  1.02it/s]Targ CNP: 3it [00:02,  1.02it/s]Targ CNP: 3it [00:02,  1.02it/s]
-/rds/user/pm846/hpc-work/Thesis/TNP-Inc/tnp/networks/setconv.py:31: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
-  (torch.tensor(init_lengthscale).exp() - 1).log(),
-Targ ConvCNP (50 x 50): 0it [00:00, ?it/s]Targ ConvCNP (50 x 50): 1it [00:02,  2.39s/it]Targ ConvCNP (50 x 50): 2it [00:04,  2.40s/it]Targ ConvCNP (50 x 50): 3it [00:07,  2.42s/it]Targ ConvCNP (50 x 50): 3it [00:07,  2.41s/it]
+Exact cache already present: True
+Using cached elevation
+Exact cache already present: True
+Exact cache already present: True
+Exact cache already present: True
+wandb:   1 of 1 files downloaded.  
+TNP-D eval: 0it [00:00, ?it/s]Adjusting worker 0 num_batches from 125 to 125.
+[rank: 0] Seed set to 0
+TNP-D eval: 1it [04:12, 252.11s/it]TNP-D eval: 2it [17:13, 563.21s/it]TNP-D eval: 3it [20:39, 400.21s/it]TNP-D eval: 4it [22:41, 290.26s/it]TNP-D eval: 5it [23:50, 210.70s/it]TNP-D eval: 6it [38:16, 433.45s/it]TNP-D eval: 7it [44:29, 413.56s/it]TNP-D eval: 8it [47:18, 335.92s/it]TNP-D eval: 9it [49:08, 265.09s/it]TNP-D eval: 10it [54:46, 287.74s/it]TNP-D eval: 11it [1:13:23, 541.53s/it]TNP-D eval: 12it [1:24:37, 581.70s/it]TNP-D eval: 13it [1:26:50, 445.90s/it]TNP-D eval: 14it [1:32:26, 412.82s/it]TNP-D eval: 15it [1:41:24, 450.35s/it]TNP-D eval: 16it [1:49:27, 460.19s/it]TNP-D eval: 17it [1:58:40, 488.13s/it]TNP-D eval: 18it [2:07:06, 493.61s/it]TNP-D eval: 19it [2:13:09, 454.29s/it]TNP-D eval: 20it [2:16:37, 380.46s/it]TNP-D eval: 21it [2:18:52, 306.74s/it]TNP-D eval: 22it [2:27:59, 378.90s/it]TNP-D eval: 23it [2:30:30, 310.50s/it]TNP-D eval: 24it [2:43:52, 457.86s/it]

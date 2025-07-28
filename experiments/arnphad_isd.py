@@ -140,6 +140,7 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
         model.update_ctx(xc=xc_stacked, yc=yc_stacked,use_flash=use_flash)
     elif is_fixed_inc_update:
         model.init_inc_structs_fixed(m=xc_stacked.shape[0], max_nc=nc+nt, xt=xt_stacked, dy=dy, device=device, use_flash=use_flash)
+        model.update_ctx_fixed(xc=xc_stacked, yc=yc_stacked,use_flash=use_flash) # Added in degubg this maybe
 
     for i in range(nt):
         xt_tmp = xt_stacked[:, i:i+1,:]
@@ -281,6 +282,8 @@ def measure_perf_timings_hadisd_plot():
         'pm846-university-of-cambridge/plain-tnp-had/model-o20d6s1q:v99', 'TNP-D')
     batchedTNP = ('experiments/configs/hadISD/had_incTNP_batched.yml',
         'pm846-university-of-cambridge/mask-batched-tnp-had/model-z5nlguxq:v99', 'incTNP-Batched')
+    batchedTNP_no_flash = ('experiments/configs/hadISD/had_incTNP_batched.yml',
+        'pm846-university-of-cambridge/mask-batched-tnp-had/model-z5nlguxq:v99', 'incTNP-Batched (No Flash)')
     cnp = ('experiments/configs/hadISD/had_cnp.yml',
         'pm846-university-of-cambridge/cnp-had/model-suqmhf9v:v99', 'CNP')
     conv_cnp = ('experiments/configs/hadISD/had_convcnp.yml',
@@ -292,6 +295,7 @@ def measure_perf_timings_hadisd_plot():
     conv_cnp_150 = ('experiments/configs/hadISD_csd3/alt_variants/had_between_convcnp.yml',
         '', 'ConvCNP (150 x 150)')      
     models = [tnp_plain, batchedTNP, cnp, conv_cnp_big, conv_cnp_125, conv_cnp_150]
+    models = [tnp_plain, batchedTNP, batchedTNP_no_flash, cnp, conv_cnp_big, conv_cnp_125, conv_cnp_150]
     # End of measure hypers
     max_high = 2
     xt = (torch.rand((m, nt, dx), device=device) * max_high * 2) - max_high
@@ -486,7 +490,8 @@ def get_model_list():
     #models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
     #models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
     all_models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp, conv_cnp_100]
-    return all_models
+    models = [batchedTNP, cnp, conv_cnp, conv_cnp_100, lbanp, incTNP, priorBatched]
+    return models
 
 # Compares NP models in AR mode on RBF set
 def compare_had_models(base_out_txt_file: str, rollout_rmse: bool, device: str = "cuda"):
@@ -553,6 +558,7 @@ def compare_had_models(base_out_txt_file: str, rollout_rmse: bool, device: str =
 
 
 if __name__ == "__main__":
+    measure_perf_timings_hadisd_plot()
     compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp_cnpsnew", rollout_rmse=True)
     #plot_ar_unrolls()
     #measure_perf_timings()
