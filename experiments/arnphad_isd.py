@@ -490,7 +490,8 @@ def get_model_list():
     #models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
     #models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
     all_models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp, conv_cnp_100]
-    models = [batchedTNP, cnp, conv_cnp, conv_cnp_100, lbanp, incTNP, priorBatched]
+    models = [batchedTNP]
+    #models = [batchedTNP, cnp, conv_cnp, conv_cnp_100, lbanp, incTNP, priorBatched]
     return models
 
 # Compares NP models in AR mode on RBF set
@@ -558,7 +559,7 @@ def compare_had_models(base_out_txt_file: str, rollout_rmse: bool, device: str =
 
 
 if __name__ == "__main__":
-    measure_perf_timings_hadisd_plot()
+    #measure_perf_timings_hadisd_plot()
     compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp_cnpsnew", rollout_rmse=True)
     #plot_ar_unrolls()
     #measure_perf_timings()
