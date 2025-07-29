@@ -438,6 +438,6 @@ def compare_rbf_models(base_out_txt_file: str, device: str = "cuda"):
 
 if __name__ == "__main__":
     #plot_rmse_predict_vs_time()
-    #measure_perf_timings()
+    measure_perf_timings()
     #plot_ar_unrolls()
     #compare_rbf_models(base_out_txt_file="experiments/plot_results/ar/ar_rbf_comp")

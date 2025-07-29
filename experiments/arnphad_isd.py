@@ -16,7 +16,7 @@ import torch.distributions as td
 import os
 import matplotlib.pyplot as plt
 import matplotlib
-from tnp.data.hadISD import HadISDDataGenerator
+from tnp.data.hadISD import HadISDDataGenerator, scale_pred_temp_dist, get_true_temp, HadISDBatch
 from plot_hadISD import plot_hadISD
 import numpy as np
 from tnp.utils.data_loading import adjust_num_batches
@@ -79,7 +79,7 @@ def _shuffle_targets(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt
     "xc: [m, nc, dx]", "yc: [m, nc, dy]", "xt: [m, nt, dx]", "yt: [m, nt, dy]"
 )
 @torch.no_grad
-def ar_metrics(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor,
+def ar_metrics(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, raw_batch: HadISDBatch,
     normalise: bool = True, order: Literal["random", "given", "left-to-right", "variance"] = "random") -> torch.Tensor:
     xt, yt, _ = _shuffle_targets(np_model, xc, yc, xt, yt, order)
     np_model.eval()
@@ -97,6 +97,10 @@ def ar_metrics(np_model: nn.Module, xc: torch.Tensor, yc: torch.Tensor, xt: torc
 
         # Prediction + log prob
         pred_dist = np_pred_fn(np_model, batch)
+        # Converts to degrees celsius
+        pred_dist = scale_pred_temp_dist(raw_batch, pred_dist)
+        yt_sel = get_true_temp(raw_batch,  yt_sel)
+
         log_probs += pred_dist.log_prob(yt_sel).sum(dim=(-1, -2))
 
         squared_errors += (pred_dist.mean - yt_sel).to(squared_errors.dtype).pow(2).sum(dim=(-1, -2))
@@ -116,7 +120,8 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     prioritise_fixed: bool = False, # If incremental updates are available prioritise fixed or true dynamic algorithm
     device: str = "cuda", # Device for computing
     device_ret: str = "cpu", # Return device
-    use_flash: bool = False, # Use flash kernel if posible
+    use_flash: bool = False, # Use flash kernel if posible,
+    return_rollout_samples: bool = False, # Returns rollout samples too
     ):
     m, nt, dx = xt.shape
     _, nc, dy = yc.shape
@@ -129,6 +134,9 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     xt_stacked, _, perm = _shuffle_targets(model, xc_stacked, yc_stacked, xt_stacked, None, order) # Should I shuffle before or after stacking?
 
     yt_preds_mean, yt_preds_std = torch.empty((m * num_samples, nt, dy), device=device), torch.empty((m * num_samples, nt, dy), device=device)
+
+    if return_rollout_samples:
+        roll_samples = torch.empty_like(yt_preds_mean)
 
     is_fixed_inc_update = isinstance(model, IncUpdateEffFixed)
     is_inc_gen_update = isinstance(model, IncUpdateEff)
@@ -155,9 +163,13 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
         pred_mean, pred_std = pred_dist.mean, pred_dist.stddev
         yt_preds_mean[:,i:i+1,:] = pred_mean
         yt_preds_std[:,i:i+1,:] = pred_std
+        if return_rollout_samples:
+            y_sample = pred_dist.sample()
+            roll_samples[:,i:i+1,:] = y_sample
         # Samples from the predictive distribution and updates the context
         if i < nt - 1:
-            yt_sampled = pred_dist.sample() # [m * num_samples, 1, dy]
+            #yt_sampled = pred_dist.sample() # [m * num_samples, 1, dy]
+            yt_sampled = pred_dist.sample() if not return_rollout_samples else y_sample # [m * num_samples, 1, dy]
             if is_inc_gen_update:
                 model.update_ctx(xc=xt_tmp, yc=yt_sampled,use_flash=use_flash)
             elif is_fixed_inc_update:
@@ -170,19 +182,23 @@ def ar_predict(model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor,
     inv_perm = perm.argsort(dim=1)
     idx = inv_perm.unsqueeze(-1).expand(-1, -1, dy)
     yt_preds_mean = yt_preds_mean.gather(dim=1, index=idx)
-    yt_preds_std  = yt_preds_std .gather(dim=1, index=idx)
+    yt_preds_std = yt_preds_std.gather(dim=1, index=idx)        
 
     yt_preds_mean = yt_preds_mean.view(num_samples, m, nt, dy)
     yt_preds_std = yt_preds_std.view(num_samples, m, nt, dy)
     # Permutes to [m, nt, dy, num_samples]
     yt_preds_mean = yt_preds_mean.permute(1,2,3,0)
-    yt_preds_std  = yt_preds_std.permute(1,2,3,0)
-    mix  = td.Categorical(torch.full((m, nt, dy, num_samples), 1.0 / num_samples, device=device_ret))
+    yt_preds_std = yt_preds_std.permute(1,2,3,0)
+    if return_rollout_samples:
+        roll_samples = roll_samples.gather(dim=1, index=idx)
+        roll_samples = roll_samples.view(num_samples, m, nt, dy).permute(1,2,3,0)
+
+    mix = td.Categorical(torch.full((m, nt, dy, num_samples), 1.0 / num_samples, device=device_ret))
     comp = td.Normal(yt_preds_mean.to(device_ret), yt_preds_std.to(device_ret))
     approx_dist = td.MixtureSameFamily(mix, comp)
 
     # For sample draws return raw samples and run through model again for smooth samples (see paper / code)
-    return approx_dist
+    return approx_dist if not return_rollout_samples else (approx_dist, roll_samples)
 
 
 
@@ -490,7 +506,7 @@ def get_model_list():
     #models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
     #models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
     all_models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp, conv_cnp_100]
-    models = [batchedTNP]
+    models = [cnp, batchedTNP]
     #models = [batchedTNP, cnp, conv_cnp, conv_cnp_100, lbanp, incTNP, priorBatched]
     return models
 
@@ -516,25 +532,34 @@ def compare_had_models(base_out_txt_file: str, rollout_rmse: bool, device: str =
         model.eval()
         batch_i = 0
         for batch in tqdm(data, desc=f'{model_name} eval'):
+            _, nt, dy = batch.yt.shape
             with torch.no_grad():
                 ll, rmse = ar_metrics(np_model=model, xc=batch.xc.to(device), yc=batch.yc.to(device),
-                    xt=batch.xt.to(device), yt=batch.yt.to(device), normalise=True, order=ordering)
+                    xt=batch.xt.to(device), yt=batch.yt.to(device), normalise=True, order=ordering, raw_batch=batch)
                 if rollout_rmse:
                     torch.cuda.synchronize()
                     starter.record()
                     pred_dist = ar_predict(model=model, xc=batch.xc.to(device), yc=batch.yc.to(device), xt=batch.xt.to(device),
                         order=ordering, num_samples=num_samples,
-                        device=device, device_ret=device, prioritise_fixed=prioritise_fixed, use_flash=use_flash)
+                        device=device, device_ret=device, prioritise_fixed=prioritise_fixed, use_flash=use_flash,
+                        return_rollout_samples=False)
                     ender.record()
                     torch.cuda.synchronize()
                     runtime_ms_unroll = starter.elapsed_time(ender)
                     tot_time_unroll += runtime_ms_unroll
-                    rmse_rollout = torch.sqrt((pred_dist.mean - batch.yt.to(device)).pow(2).mean(dim=(-2, -1))) 
+                    yt_temp_units = get_true_temp(batch, batch.yt.to(device))
+                    pred_mean = get_true_temp(batch, pred_dist.mean.to(device))
+                    #roll_temp_units = roll_samples * batch.std_temp + batch.mean_temp
+                    #diff2 = (roll_temp_units - yt_temp_units.unsqueeze(-1)).pow(2)
+                    diff2 = (pred_mean - yt_temp_units).pow(2)
+                    rmse_rollout = torch.sqrt(diff2.mean(dim=(-3, -2, -1)))
             if rollout_rmse:
-                mean_rmse_unroll = torch.mean(rmse_rollout).item()
+                mean_rmse_unroll = rmse_rollout.mean().item()
                 rmse_unroll_list.append(mean_rmse_unroll)
             mean_ll = torch.mean(ll).item() # Goes from [m] to a float
             mean_rmse = torch.mean(rmse).item()
+            
+            print(f"ll {mean_ll} rmse {mean_rmse} rmseroll {mean_rmse_unroll if rollout_rmse else None}")
             ll_list.append(mean_ll)
             rmse_list.append(mean_rmse)
             if max_no_batches is not None and  batch_i + 1 >= max_no_batches: break
@@ -563,4 +588,3 @@ if __name__ == "__main__":
     compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp_cnpsnew", rollout_rmse=True)
     #plot_ar_unrolls()
     #measure_perf_timings()
-    #measure_perf_timings_hadisd_plot() # for clearer plots
