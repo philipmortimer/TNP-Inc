@@ -506,7 +506,7 @@ def get_model_list():
     #models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp]
     #models = [batchedTNP, conv_cnp, cnp, incTNP, priorBatched, tnp_plain, lbanp]
     all_models = [tnp_plain, incTNP, batchedTNP, priorBatched, lbanp, cnp, conv_cnp, conv_cnp_100]
-    models = [cnp, batchedTNP]
+    models = [batchedTNP, cnp]
     #models = [batchedTNP, cnp, conv_cnp, conv_cnp_100, lbanp, incTNP, priorBatched]
     return models
 
@@ -560,6 +560,7 @@ def compare_had_models(base_out_txt_file: str, rollout_rmse: bool, device: str =
             mean_rmse = torch.mean(rmse).item()
             
             print(f"ll {mean_ll} rmse {mean_rmse} rmseroll {mean_rmse_unroll if rollout_rmse else None}")
+            #print(ll)
             ll_list.append(mean_ll)
             rmse_list.append(mean_rmse)
             if max_no_batches is not None and  batch_i + 1 >= max_no_batches: break
@@ -585,6 +586,6 @@ def compare_had_models(base_out_txt_file: str, rollout_rmse: bool, device: str =
 
 if __name__ == "__main__":
     #measure_perf_timings_hadisd_plot()
-    compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp_cnpsnew", rollout_rmse=True)
+    compare_had_models(base_out_txt_file="experiments/plot_results/hadar/ar_had_comp_cnpsnew", rollout_rmse=False)
     #plot_ar_unrolls()
     #measure_perf_timings()
