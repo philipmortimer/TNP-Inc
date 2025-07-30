@@ -10,6 +10,7 @@ datasets/
 notebooks/
 lightning_logs/
 experiments/data_temp/csd3_all_data/
+experiments/mess_around.py
 
 # Slurm files
 /slurm-*.out
