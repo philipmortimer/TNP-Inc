@@ -254,7 +254,7 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
         # Calculates if an individual sample is needed for plotting
         more_samples = return_samples is not None and len(m_var_nll_samples) < return_samples
         if more_samples: 
-            random.seed(13)
+            #random.seed(13)
             return_sample_index = random.randint(0, batch_size - 1)
             
         # Computes m_var for each model
@@ -355,8 +355,9 @@ def plot_models_setup_rbf_same():
     models_tnp = [tnp_plain, inc_tnp, inc_tnp_batched]
 
     tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
+    tnp_ar_100 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 100]
     tnp_ar_50 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 50]
-    tnp_ar_10 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 10]
+    tnp_ar_10 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 20]
     tnp_ar_20 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 20]
     models_ar = [tnp_ar_10, tnp_ar_20]
 
@@ -388,8 +389,8 @@ def plot_models_setup_rbf_same():
 
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_gp + models_ar
-    #return [tnp_plain, inc_tnp, inc_tnp_batched, gp_streamed_expanding_16, gp_streamed_expanding_32]
-    return [tnp_plain]
+    #return [tnp_plain, inc_tnp, inc_tnp_batched]
+    return [tnp_ar_10]
 
 def extract_vars_from_folder_name(folder_name):
     patterns = {
@@ -456,7 +457,7 @@ def plot_from_folder(folder):
         # Extracts from the summary fixed format
         lines = model_summary_txt.split("\n")
         model_name = lines[1].split(": ")[1]
-        if model_name.startswith("Streamed GP-S") or model_name.startswith("TNP-A"): continue
+        if model_name.startswith("Streamed GP-S"): continue
         mean_m_var = float(lines[2].split(" ")[1])
         mean_m_nlls = float(lines[3].split(" ")[1])
         npz_file = lines[4].split(": ")[1]
@@ -539,14 +540,14 @@ def plot_from_folder(folder):
 # Attempts to recreate something like figure 2. Use plot_models_setup as helper for this func.
 def gather_stats_models(helper_tuple, base_folder_name):
     # Exchange hyperparams
-    nc, nt = 32, 128 
+    nc, nt = 10, 10 
     samples_per_epoch = 4096 # How many datapoints in datasets
     no_permutations=64
     batch_size = 128
     use_autoreg_eq=False
     max_samples=samples_per_epoch
     return_samples=max_samples # essentially return as many as possible (but one per batch)
-    skip_existing_folders = False # Skips existing file writes - no need to do work again
+    skip_existing_folders = True # Skips existing file writes - no need to do work again
     # End of hypers
 
     (models) = helper_tuple
