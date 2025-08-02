@@ -253,7 +253,9 @@ def exchange(models_with_different_seeds, data_loader, no_permutations, device, 
         mods_out_mnll = []
         # Calculates if an individual sample is needed for plotting
         more_samples = return_samples is not None and len(m_var_nll_samples) < return_samples
-        if more_samples: return_sample_index = random.randint(0, batch_size - 1)
+        if more_samples: 
+            random.seed(13)
+            return_sample_index = random.randint(0, batch_size - 1)
             
         # Computes m_var for each model
         for model  in models_with_different_seeds:
@@ -387,7 +389,7 @@ def plot_models_setup_rbf_same():
     models_all_no_ar = models_tnp + models_gp
     models_all = models_tnp + models_gp + models_ar
     #return [tnp_plain, inc_tnp, inc_tnp_batched, gp_streamed_expanding_16, gp_streamed_expanding_32]
-    return [gp_streamed_expanding_16, gp_streamed_expanding_32]
+    return [tnp_plain]
 
 def extract_vars_from_folder_name(folder_name):
     patterns = {
@@ -544,7 +546,7 @@ def gather_stats_models(helper_tuple, base_folder_name):
     use_autoreg_eq=False
     max_samples=samples_per_epoch
     return_samples=max_samples # essentially return as many as possible (but one per batch)
-    skip_existing_folders = True # Skips existing file writes - no need to do work again
+    skip_existing_folders = False # Skips existing file writes - no need to do work again
     # End of hypers
 
     (models) = helper_tuple
