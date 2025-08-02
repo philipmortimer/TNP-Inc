@@ -105,7 +105,7 @@ def plot_perm(
     annotate: bool = True, # Number the points or not
     figsize: Tuple[float, float] = (8.0, 6.0),
     x_range: Tuple[float, float] = (-2.0, 2.0),
-    y_lim: Tuple[float, float] = (-2.0, 2.0),
+    y_lim: Tuple[float, float] = (-3.0, 3.0),
     points_per_dim: int = 64,
     savefig: bool = True,
     logging: bool = True,
@@ -632,7 +632,7 @@ if __name__ == "__main__":
                          max_log10_lengthscale=max_log10_lengthscale)
     kernels = [rbf_kernel_factory]
     # Data generator params
-    nc, nt = 32, 128
+    nc, nt = 12, 128
     context_range = [[-2.0, 2.0]]
     target_range = [[-2.0, 2.0]]
     samples_per_epoch = 1
@@ -643,12 +643,18 @@ if __name__ == "__main__":
         deterministic=True, kernel=kernels)
     data = next(iter(gen_val))
     # Gets plain model - ensure these strings are correct
+    #plain_model = get_model('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 
+     #   'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200')
     plain_model = get_model('experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml', 
-        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-7ib3k6ga:v200')
+        'pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200')
+    # plain tnp model-a3qwpptn:v200
     plain_model.eval()
 
+    #masked_model = get_model('experiments/configs/synthetic1dRBF/gp_causal_tnp.yml', 
+    #    'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200')
     masked_model = get_model('experiments/configs/synthetic1dRBF/gp_causal_tnp.yml', 
-        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-vavo8sh2:v200')
+        'pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200')
+    #masked model-8mxfyfnw:v200
     masked_model.eval()
 
     #masked_model = get_model('experiments/configs/synthetic1dRBF/gp_priorbatched_causal_tnp_rbf_rangesame.yml',
@@ -679,7 +685,7 @@ if __name__ == "__main__":
 
     print("Starting search")
     perms, log_p, (data_time, inference_time, total_time) = gather_rand_perms(masked_model, xc, yc, data.xt, data.yt, 
-        no_permutations=100_000, device='cuda', batch_size=2048)
+        no_permutations=10_000_000, device='cuda', batch_size=2048)
     print(f"Data time: {data_time:.2f}s, Inference time: {inference_time:.2f}s, Total time: {total_time:.2f}s")
     visualise_perms(masked_model, perms, log_p, xc, yc, data.xt, data.yt,
         folder_path="experiments/plot_results/adversarial", file_id="1", gt_pred=data.gt_pred, 

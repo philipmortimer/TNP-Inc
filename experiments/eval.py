@@ -47,6 +47,11 @@ def test_model(lit_model, experiment, wandb_run=None):
     test_result["mean_loglik"] = loglik.mean()
     test_result["std_loglik"] = loglik.std() / (len(loglik) ** 0.5)
 
+    rmse = torch.stack(test_result["rmse"])
+    test_result["mean_rmse"] = rmse.mean()
+    test_result["std_rmse"] = rmse.std() / (len(rmse) ** 0.5)    
+
+
     # Handles hadISD case
     if "loglik_temp" in test_result:
         loglik_temp = torch.stack(test_result["loglik_temp"])
@@ -68,6 +73,9 @@ def test_model(lit_model, experiment, wandb_run=None):
         summary.update({"num_params": num_params})
         summary.update({f"test/{eval_name}/loglik": test_result["mean_loglik"]})
         summary.update({f"test/{eval_name}/std_loglik": test_result["std_loglik"]})
+
+        summary.update({f"test/{eval_name}/rmse": test_result["mean_rmse"]})
+        summary.update({f"test/{eval_name}/std_rmse": test_result["std_rmse"]})
         if "mean_gt_loglik" in test_result:
             summary.update({f"test/{eval_name}/gt_loglik": test_result["mean_gt_loglik"]})
             summary.update({f"test/{eval_name}/std_gt_loglik": test_result["std_gt_loglik"]})
@@ -89,4 +97,7 @@ def main():
 
 
 if __name__ == "__main__":
+# python experiments/eval.py --run_path pm846-university-of-cambridge/plain-tnp-rbf-rangesame/runs/a3qwpptn --config experiments/configs/synthetic1dRBF/gp_plain_tnp_rangesame.yml --checkpoint pm846-university-of-cambridge/plain-tnp-rbf-rangesame/model-a3qwpptn:v200
+# python experiments/eval.py --run_path pm846-university-of-cambridge/mask-tnp-rbf-rangesame/runs/8mxfyfnw --config experiments/configs/synthetic1dRBF/gp_causal_tnp_rangesame.yml --checkpoint pm846-university-of-cambridge/mask-tnp-rbf-rangesame/model-8mxfyfnw:v200
+# python experiments/eval.py --run_path pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/runs/xtnh0z37 --config experiments/configs/synthetic1dRBF/gp_batched_causal_tnp_rbf_rangesame.yml --checkpoint pm846-university-of-cambridge/mask-batched-tnp-rbf-rangesame/model-xtnh0z37:v200
     main()
