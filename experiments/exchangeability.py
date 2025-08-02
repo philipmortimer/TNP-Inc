@@ -53,7 +53,7 @@ matplotlib.rcParams.update({
 )
 def m_var_fixed(tnp_model, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor, yt: torch.Tensor, perms_ctx: torch.Tensor, 
     gt_pred, return_sample_index: Optional[int] = None,
-    sub_batch_size=2048,
+    sub_batch_size=1024,
     use_torch_grad: bool = False):
     with torch.set_grad_enabled(use_torch_grad):
         is_gp_model = isinstance(tnp_model, GPStreamRBF)
@@ -357,7 +357,7 @@ def plot_models_setup_rbf_same():
     tnp_ar_cptk, tnp_ar_yml, tnp_name = 'experiments/configs/synthetic1dRBF/gp_tnpa_rangesame.yml', 'pm846-university-of-cambridge/tnpa-rbf-rangesame/model-wbgdzuz5:v200', "TNP-A"
     tnp_ar_100 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 100]
     tnp_ar_50 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 50]
-    tnp_ar_10 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 20]
+    tnp_ar_10 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 50]
     tnp_ar_20 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 20]
     models_ar = [tnp_ar_10, tnp_ar_20]
 
@@ -421,7 +421,7 @@ def generate_folder_name(nc, nt, samples_per_epoch, no_permutations, batch_size,
 def plot_from_folder(folder):
     # Plot hypers
     max_samples_plot = 10 # Max number of samples
-    filter_ugly_thres = 0.0 #  Values not to include on plot
+    filter_ugly_thres = 0.005 #  Values not to include on plot
     max_dist_from_centroid = 100
     # End of plot hypers
 

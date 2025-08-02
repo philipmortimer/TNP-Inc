@@ -1,0 +1,5 @@
+--------------------
+Model_Name: TNP-A (50 samples)
+Mean_M_Var: 0.25535293598659337
+Mean_M_NLL: 1.0047971969470382
+Samples_File (samples_m_var and samples_m_nll): samples.npz
