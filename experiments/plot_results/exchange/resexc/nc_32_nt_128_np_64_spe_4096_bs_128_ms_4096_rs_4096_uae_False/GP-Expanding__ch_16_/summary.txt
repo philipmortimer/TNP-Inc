@@ -1,0 +1,5 @@
+--------------------
+Model_Name: GP-Expanding (ch=16)
+Mean_M_Var: 15.27598602278158
+Mean_M_NLL: 2.5455373600125313
+Samples_File (samples_m_var and samples_m_nll): samples.npz

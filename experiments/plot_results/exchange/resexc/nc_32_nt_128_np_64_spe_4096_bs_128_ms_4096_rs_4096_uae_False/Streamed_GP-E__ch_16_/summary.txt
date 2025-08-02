@@ -1,5 +1,0 @@
---------------------
-Model_Name: Streamed GP-E (ch=16)
-Mean_M_Var: 12.707260844297707
-Mean_M_NLL: 2.543805882334709
-Samples_File (samples_m_var and samples_m_nll): samples.npz

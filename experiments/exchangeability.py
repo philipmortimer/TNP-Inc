@@ -358,7 +358,7 @@ def plot_models_setup_rbf_same():
     tnp_ar_20 = [tnp_ar_cptk, tnp_ar_yml, tnp_name, 20]
     models_ar = [tnp_ar_10, tnp_ar_20]
 
-    gp_name = "Streamed GP"
+    gp_name = "GP-Expanding"
     gp_streamed_expanding_1 = ["", "", gp_name, 1, "Expanding"]
     gp_streamed_expanding_2 = ["", "", gp_name, 2, "Expanding"]
     gp_streamed_expanding_4 = ["", "", gp_name, 4, "Expanding"]
@@ -429,7 +429,7 @@ def plot_from_folder(folder):
     model_folders_unstr = [p for p in data_directory.iterdir() if p.is_dir()]
     # Imposes plot ordering
     remaining_folders = set(model_folders_unstr)
-    order = ["TNP-D", "incTNP", "incTNP-Batched", "TNP-A", "Streamed GP-E"]
+    order = ["TNP-D", "incTNP", "incTNP-Batched", "TNP-A", "GP-Expanding"]
     model_folders = []
     for prefix in order:
         matches = [p for p in remaining_folders if p.name.startswith(prefix)]
@@ -530,7 +530,7 @@ def plot_from_folder(folder):
 
     ax.legend()
 
-    ax.set_title(f"Implicit Bayesianness vs Performance (NC={nc}, NT={nt})")
+    ax.set_title(f"Exchangeability vs Performance (NC={nc}, NT={nt})")
 
     plt.savefig(folder + "/brunofig.png", bbox_inches="tight")
 
@@ -544,7 +544,7 @@ def gather_stats_models(helper_tuple, base_folder_name):
     use_autoreg_eq=False
     max_samples=samples_per_epoch
     return_samples=max_samples # essentially return as many as possible (but one per batch)
-    skip_existing_folders = False # Skips existing file writes - no need to do work again
+    skip_existing_folders = True # Skips existing file writes - no need to do work again
     # End of hypers
 
     (models) = helper_tuple
@@ -560,9 +560,9 @@ def gather_stats_models(helper_tuple, base_folder_name):
     for mod_data in models:
         mod_cptk, mod_yml, model_name = mod_data[0], mod_data[1], mod_data[2]
         # Formats model names
-        if model_name == "Streamed GP":
+        if model_name == "GP-Expanding":
             _, _, name_base, chunk_size, strat = mod_data
-            gp_ext = "-E" if strat == "Expanding" else "-S"
+            gp_ext = "" if strat == "Expanding" else ""
             model_name_fmt = model_name + gp_ext+ f' (ch={chunk_size})'
         elif model_name == "TNP-A":
             model_name_fmt = model_name + f' ({mod_data[3]} samples)'
@@ -578,7 +578,7 @@ def gather_stats_models(helper_tuple, base_folder_name):
 
         use_torch_grad = False
         # Handles GP case seperately
-        if model_name == "Streamed GP":
+        if model_name == "GP-Expanding":
             _, _, name_base, chunk_size, strat = mod_data
             model = GPStreamRBF(chunk_size=chunk_size, train_strat=strat)
             use_torch_grad = True # Need gradient to train the GP model
