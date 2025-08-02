@@ -143,7 +143,7 @@ def plot_perm(
     # Labels context set ordering
     if annotate:
         for j, (xj, yj) in enumerate(zip(x_ctx, y_ctx), 1):
-            plt.annotate(str(j), (xj, yj), textcoords="offset points", xytext=(5, 5), fontsize=20)
+            plt.annotate(str(j), (xj, yj), textcoords="offset points", xytext=(5, 5), fontsize=25)
 
     plt.scatter(xt[0, :, 0].cpu(), yt[0, :, 0].cpu(), c="r", s=30, label="Target")
 
@@ -333,15 +333,16 @@ def plot_parallel_coordinates_bezier(
         ax.plot([], [], color='red', linestyle='--', label='Target X-Coordinates')
 
     # Aesthetics
-    ax.set_xlabel("Context Point Order", fontsize=16)
-    ax.set_ylabel("X-Coordinate of Context Point", fontsize=16)
-    ax.set_title(f"Parallel Coordinates Plot of {perm_xs.shape[0]} Permutations. NC={xc.shape[0]} NT={xt.shape[0]} K={K:,}", fontsize=20)
+    ax.set_xlabel("Context Point Order", fontsize=24)
+    ax.set_ylabel("X-Coordinate of Context Point", fontsize=24)
+    ax.set_title(f"Ordering Performance NC={xc.shape[0]} NT={xt.shape[0]}", fontsize=30)
     ax.grid(True, which='both', linestyle='--', linewidth=0.5)
     ax.set_xticks(positions)
     ax.set_xticklabels([i+1 for i in positions])
     ax.tick_params(axis='x', rotation=45)
     cbar = fig.colorbar(sm, ax=ax, pad=0.01)
-    cbar.set_label("Log-Likelihood", fontsize=16, rotation=270, labelpad=20)
+    cbar.set_label("Log-Likelihood", fontsize=24, rotation=270, labelpad=24)
+    ax.tick_params(axis='both', which='major', labelsize=19)
     x_min, x_max = xc.min() - 0.5, xc.max() + 0.5
     if plot_targets: x_min, x_max = min(x_min, xt.min() - 0.2), max(x_max, xt.max() + 0.2)
     ax.set_ylim(x_min, x_max)
@@ -389,18 +390,20 @@ def plot_log_p_bins(log_p, file_name, nc, nt, plain_tnp_perf=None, lines=[]):
         ax.axvline(location, color=colour, linestyle="-.", linewidth=2.5, label=name)
     # Histogram
     ax.hist(log_p, bins='auto', density=True)
-    ax.set_xlabel("Log-Likelihood", fontsize=16)
-    ax.set_ylabel("Density", fontsize=16)
-    ax.set_title(rf"Fluctuation in Log-Likelihood over Different Permutations of Data (NC={nc} NT={nt} K={log_p.shape[0]:,})", fontsize=20)
+    ax.set_xlabel("Log-Likelihood", fontsize=24)
+    ax.set_xlim(0.44, 0.56)
+    ax.set_ylabel("Density", fontsize=24)
+    ax.set_title(rf"Fluctuation over Context Permutations (NC={nc} NT={nt} K={log_p.shape[0]:,})", fontsize=30)
     ax.grid(True, which="both", linestyle="--", linewidth=0.5)
-    ax.legend(frameon=False, fontsize=10, loc="best")
+    ax.tick_params(axis='both', which='major', labelsize=22)
+    ax.legend(frameon=False, fontsize=24, loc="best")
     plt.tight_layout()
     plt.savefig(file_name + "_withoutbasetnp.png", bbox_inches="tight", dpi=300)
     # Adds red line to show the performance of a plain tnp model if it is given
     if plain_tnp_perf is not None:
         ax.axvline(plain_tnp_perf, color="red", linestyle="--", linewidth=2.5, 
             label=fr"TNP-D ($\ell={{{plain_tnp_perf:.2f}}}$)")
-        ax.legend(frameon=False, fontsize=10, loc="best")
+        ax.legend(frameon=False, fontsize=24, loc="best")
         plt.tight_layout()
         plt.savefig(file_name + "_withbasetnp.png", bbox_inches="tight", dpi=300)
     plt.close()
@@ -556,7 +559,15 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
         batch = SyntheticBatch(xc=xc, yc=yc, xt=xt, yt=yt, x=torch.cat([xc, xt], dim=1), y=torch.cat([yc, yt], dim=1))
         nt, dy = yt.shape[-2:]
         plain_tnp_mean = (plain_tnp_model(xc, yc, xt).log_prob(yt).sum(dim=(-1, -2)) / (nt * dy)).item()
+    # gets l -> r and r->l ordering
+    left_right = logp_for_perm(tnp_model, xc, yc, xt, yt, torch.arange(xc.shape[1], device=xc.device))
+    print(left_right)
+    right_left = logp_for_perm(tnp_model, xc, yc, xt, yt, torch.arange(xc.shape[1] -1, -1, -1, device=xc.device))
+    print(right_left)
+    lines_ord=[("Left-to-Right","yellow", left_right), ("Right-to-Left", "orange", right_left)]
+
     plot_log_p_bins(log_p.cpu(), f"{folder_path}/bins_dist_id_{file_id}", xc.shape[1], xt.shape[1], plain_tnp_mean)
+    plot_log_p_bins(log_p.cpu(), f"{folder_path}/bins_dist_id_lr_{file_id}", xc.shape[1], xt.shape[1], plain_tnp_mean, lines_ord)
     # Greedy line plots 
     #Plots bins with greedy lines also
     lines = [(fr"Best Greedy (${inc_logps_best[-1]:.2f}$)", "green", inc_logps_best[-1]), (fr"Median Greedy (${inc_logps_median[-1]:.2f}$)", "yellow", inc_logps_median[-1]),
@@ -578,6 +589,14 @@ def visualise_perms(tnp_model, perms: torch.tensor, log_p: torch.tensor, xc: tor
     plot_parallel_coordinates_bezier(perms=perms_greedy,log_p=log_p_greedy,
          xc=xc, xt=xt, file_name=f"{folder_path}/vargreedy_parra_cords_{file_id}", plot_targets=plot_targets, alpha_line=1.0)
     plot_log_p_lines([(inc_vars_best, "Best Greedy-V"), (inc_vars_median, "Median Greedy-V"), (inc_vars_worst, "Worst Greedy-V")], f"{folder_path}/vargreedy_lines_{file_id}", yt.shape[1])
+
+def logp_for_perm(model, xc, yc, xt, yt, perm):
+    xc_p = xc[:, perm, :]
+    yc_p = yc[:, perm, :]
+    nt, dy = yt.shape[-2:]
+    batch = SyntheticBatch(xc=xc_p, yc=yc_p, xt=xt, yt=yt, x=torch.cat([xc_p, xt], dim=1), y=torch.cat([yc_p, yt], dim=1))
+    mean = (model(xc, yc, xt).log_prob(yt).sum(dim=(-1, -2)) / (nt * dy)).item()
+    return mean
 
 
 def get_model(config_path, weights_and_bias_ref, device='cuda', seed: bool = True, instantiate_only_model: bool = False, load_mod_weights: bool = True):
