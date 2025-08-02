@@ -40,7 +40,7 @@ generators:
     max_nt: 128
     context_range: ${params.context_range}
     target_range: ${params.target_range}
-    samples_per_epoch: 4096
+    samples_per_epoch: 80_000
     batch_size: 16
     deterministic: True
 
